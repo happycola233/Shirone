@@ -90,3 +90,5 @@ artifacts/shirone-ai-*
 /public/assets/projects/
 /public/assets/anime/*.webp
 /public/assets/audio/
+/public/img/
+/public/favicon.ico
