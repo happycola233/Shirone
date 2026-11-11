@@ -60,6 +60,8 @@ if (footerConfig.enable) {
 <FooterBar
 	name={profileConfig.name}
 	year={currentYear}
+	since={footerConfig.copyrightSince}
+	allRightsReserved={footerConfig.allRightsReserved ?? true}
 	links={links}
 	poweredBy={poweredBy}
 	version={packageMetadata.version}

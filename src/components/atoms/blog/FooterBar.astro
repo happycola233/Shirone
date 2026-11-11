@@ -14,6 +14,10 @@ interface Props {
 	name: string;
 	/** 版权年份（默认当前年） */
 	year?: number;
+	/** 版权起始年份（早于 year 时显示为「since–year」） */
+	since?: number;
+	/** 是否显示「All Rights Reserved.」 */
+	allRightsReserved?: boolean;
 	links?: FooterLink[];
 	poweredBy?: FooterLink[];
 	version?: string;
@@ -26,6 +30,8 @@ interface Props {
 const {
 	name,
 	year = new Date().getFullYear(),
+	since,
+	allRightsReserved = true,
 	links = [],
 	poweredBy = [],
 	version = "",
@@ -40,7 +46,7 @@ const {
 	<div class="m3-blog-footer__inner">
 		{customHtml && <div class="m3-blog-footer__custom" set:html={customHtml} />}
 		<p class="m3-blog-footer__text">
-			&copy; {year} {name}. All Rights Reserved.
+			&copy; {since && since < year ? `${since}–${year}` : year} {name}{allRightsReserved ? ". All Rights Reserved." : ""}
 			{links.map((l) => (
 				<Fragment>
 					<span class="m3-blog-footer__sep" aria-hidden="true">/</span>

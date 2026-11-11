@@ -8,4 +8,8 @@ export interface FooterConfig {
 	 * 关闭时（false）满足零额外负担，不进行文件读取与额外 DOM 渲染。
 	 */
 	enable: boolean;
+	/** 版权起始年份；设置后显示为「© 起始年–当前年」 */
+	copyrightSince?: number;
+	/** 是否在版权行末尾显示「All Rights Reserved.」（默认 true；文章用 CC 许可时可关掉） */
+	allRightsReserved?: boolean;
 }
