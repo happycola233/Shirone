@@ -19,7 +19,8 @@
 	aspect-ratio: var(--image-grid-aspect-ratio, 16 / 10);
 	overflow: hidden;
 	border-radius: var(--shape-corner-m);
-	background: var(--surface-container-high);
+	/* happycola：`bg="none"` 时由组件写入 --image-grid-bg: transparent */
+	background: var(--image-grid-bg, var(--surface-container-high));
 	line-height: 0;
 }
 
@@ -31,7 +32,7 @@
 .custom-md .image-grid .image-grid__link:hover,
 .custom-md .image-grid .image-grid__link:active {
 	border-bottom: 0;
-	background: var(--surface-container-high);
+	background: var(--image-grid-bg, var(--surface-container-high));
 	text-decoration: none;
 }
 

@@ -936,6 +936,12 @@
 					"required": false,
 					"values": "cover | contain",
 					"default": "cover"
+				},
+				{
+					"name": "bg",
+					"required": false,
+					"values": "none",
+					"default": "theme surface"
 				}
 			],
 			"implementation": ["src/plugins/rehype-component-image-grid.mjs"],

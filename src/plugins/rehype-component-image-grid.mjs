@@ -5,6 +5,7 @@
  * - `columns` 1~6 的整数，默认 3，非法值回退默认；
  * - `aspect` 形如 `16 / 10` 的宽高比字符串，默认 `16 / 10`，非法值回退默认；
  * - `fit` `cover` | `contain`，默认 `cover`。
+ * - `bg` 只接受 `none`：去掉格子的底色（happycola：圆形头像这类透明背景图片会露出底色）。
  *
  * 每个网格分配独立的 `data-fancybox="image-grid-N"` 分组 ID，
  * 灯箱轮播范围仅限当前网格，不与文章整体图片组合并。
@@ -124,6 +125,7 @@ export function ImageGridComponent(properties, children) {
 	const columns = parseColumns(properties?.columns);
 	const aspectRatio = parseAspectRatio(properties?.aspect);
 	const fit = parseFit(properties?.fit);
+	const noBackground = properties?.bg === "none";
 
 	const items = images.map((image) => {
 		image.properties = image.properties ?? {};
@@ -162,7 +164,7 @@ export function ImageGridComponent(properties, children) {
 		{
 			class: "image-grid",
 			"data-columns": String(columns),
-			style: `--image-grid-columns: ${columns}; --image-grid-aspect-ratio: ${aspectRatio}; --image-grid-fit: ${fit};`,
+			style: `--image-grid-columns: ${columns}; --image-grid-aspect-ratio: ${aspectRatio}; --image-grid-fit: ${fit};${noBackground ? " --image-grid-bg: transparent;" : ""}`,
 		},
 		items,
 	);

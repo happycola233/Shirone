@@ -49,6 +49,21 @@
     }
   }
 
+  /* happycola：带宽度标记（w-N%）的图片是块级的；外面再包一层行内链接（[![图](…)](链接)）时，
+     链接的内边距会在图片上下留出空行和一小截「胶囊」。这种链接改成块级、去掉链接样式 */
+  a:not(.no-styling):has(> img[style*="display: block"]) {
+    display: block;
+    padding: 0;
+    margin: 0;
+    text-decoration: none;
+
+    &:hover,
+    &:active {
+      background: none;
+      border-bottom: 0;
+    }
+  }
+
   code {
     @apply bg-[var(--inline-code-bg)] text-[var(--inline-code-color)] px-1 py-0.5 rounded-md overflow-hidden;
 
