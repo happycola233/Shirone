@@ -5,6 +5,11 @@ import SearchBar from "@components/molecules/SearchBar.svelte";
 import I18nKey from "@i18n/i18nKey";
 import { i18n } from "@i18n/translation";
 import Icon from "@iconify/svelte";
+import {
+	tidyCjkSpacing,
+	tidyResultTitle,
+	toPagefindQuery,
+} from "@utils/cjk-search.ts";
 import { url } from "@utils/url-utils.ts";
 import { onMount } from "svelte";
 import type { SearchResult } from "@/global";
@@ -16,10 +21,11 @@ let isSearching = false;
 let pagefindLoaded = false;
 let initialized = false;
 
+// happycola：中文按单字索引，标题和摘要里多出来的空格显示前去掉（见 utils/cjk-search.ts）
 $: panelResults = result.map((r) => ({
 	url: r.url,
-	title: r.meta.title,
-	excerpt: r.excerpt,
+	title: tidyResultTitle(r.meta.title),
+	excerpt: tidyCjkSpacing(r.excerpt),
 }));
 
 const fakeResult: SearchResult[] = [
@@ -85,7 +91,9 @@ const search = async (keyword: string, isDesktop: boolean): Promise<void> => {
 			}
 			pagefindLoaded = typeof window.pagefind?.search === "function";
 			if (pagefindLoaded && window.pagefind) {
-				const response = await window.pagefind.search(keyword);
+				const response = await window.pagefind.search(
+					toPagefindQuery(keyword),
+				);
 				searchResults = await Promise.all(
 					response.results.map((item) => item.data()),
 				);
