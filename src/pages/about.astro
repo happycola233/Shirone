@@ -2,11 +2,13 @@
 import { getEntry, render } from "astro:content";
 import Card from "@components/atoms/display/Card.svelte";
 import Markdown from "@components/content/Markdown.astro";
+import CommentSection from "@components/organisms/comment/CommentSection.astro";
 import I18nKey from "@i18n/i18nKey";
 import MainGridLayout from "@layouts/MainGridLayout.astro";
 import { resolveI18nText } from "@utils/i18n-utils";
 import { getMarkdownStylesheetAssets } from "@utils/markdown-assets";
-import { aboutConfig } from "@/config/aboutConfig";
+import { url } from "@utils/url-utils";
+import { aboutConfig, siteConfig } from "@/config";
 
 if (!aboutConfig.enable) {
 	return Astro.redirect("/404/");
@@ -35,4 +37,14 @@ const markdownStylesheetAssets = await getMarkdownStylesheetAssets(
             </Markdown>
         </Card>
     </div>
+    <!-- happycola：关于页保留评论区（旧站 /about/ 的评论原路对上） -->
+    <CommentSection
+        context={{
+            key: "page:about",
+            path: url("/about/"),
+            title: pageTitle,
+            language: siteConfig.lang,
+        }}
+        class="onload-animation"
+    />
 </MainGridLayout>

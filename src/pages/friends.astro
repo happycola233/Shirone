@@ -1,10 +1,16 @@
 ---
-import FriendSection from "@components/organisms/FriendSection.svelte";
+import { getEntry, render } from "astro:content";
+import Card from "@components/atoms/display/Card.svelte";
+import Markdown from "@components/content/Markdown.astro";
+import CommentSection from "@components/organisms/comment/CommentSection.astro";
+import FriendSectionWithPartners from "@components/organisms/FriendSectionWithPartners.svelte";
 import I18nKey from "@i18n/i18nKey";
 import MainGridLayout from "@layouts/MainGridLayout.astro";
 import { resolveI18nText } from "@utils/i18n-utils";
-import { friendsConfig } from "@/config/friendsConfig";
-import { getFriendsList } from "../data/friends";
+import { getMarkdownStylesheetAssets } from "@utils/markdown-assets";
+import { url } from "@utils/url-utils";
+import { friendsConfig, siteConfig } from "@/config";
+import { biliPartners, getFriendsList } from "../data/friends";
 
 if (!friendsConfig.enable) {
 	return Astro.redirect("/404/");
@@ -15,8 +21,34 @@ const pageDescription = resolveI18nText(
 	friendsConfig.description,
 	I18nKey.friendsBanner,
 );
+
+// happycola：友链页正文（本站信息、申请规则）写在内容仓 content/spec/friends.md，没有就不显示
+const friendsSpec = await getEntry("spec", "friends");
+const rendered = friendsSpec ? await render(friendsSpec) : null;
+const markdownStylesheetAssets = rendered
+	? await getMarkdownStylesheetAssets(rendered.remarkPluginFrontmatter.markdownSyntaxes)
+	: [];
+const Content = rendered?.Content;
 ---
 
 <MainGridLayout title={pageTitle} description={pageDescription} page="friends">
-    <FriendSection friends={getFriendsList()} title={pageTitle} subtitle={pageDescription} client:visible></FriendSection>
+    {markdownStylesheetAssets.map(({ pack, css }) => <style is:inline slot="head" data-swup-optional={pack} set:html={css}></style>)}
+    <FriendSectionWithPartners friends={getFriendsList()} partners={biliPartners} title={pageTitle} subtitle={pageDescription} client:load></FriendSectionWithPartners>
+    {Content && (
+        <Card color="var(--card-bg)" radius="l" class="mt-4 p-6 lg:p-8 relative w-full onload-animation">
+            <Markdown class="mt-2">
+                <Content />
+            </Markdown>
+        </Card>
+    )}
+    <!-- happycola：友链申请在评论区（旧站 /link/ 的评论在阶段 6 迁到 /friends/） -->
+    <CommentSection
+        context={{
+            key: "page:friends",
+            path: url("/friends/"),
+            title: pageTitle,
+            language: siteConfig.lang,
+        }}
+        class="onload-animation"
+    />
 </MainGridLayout>

@@ -24,6 +24,7 @@ const host = $derived.by(() => {
 		<div class="friend-card__header">
 			<Avatar
 				src={friend.imgurl}
+				referrerPolicy="no-referrer"
 				alt=""
 				size={40}
 				shape="circle"

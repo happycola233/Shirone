@@ -11,6 +11,8 @@ let {
 	height,
 	loading = "lazy",
 	fetchPriority,
+	/** 外链头像的防盗链处理（如 B 站图床拒绝外站 Referer 时传 "no-referrer"） */
+	referrerPolicy,
 	alt = "",
 	/** 直径（px），默认 40 */
 	size = 40,
@@ -27,6 +29,7 @@ let {
 	height?: number;
 	loading?: "lazy" | "eager";
 	fetchPriority?: "high" | "low" | "auto";
+	referrerPolicy?: ReferrerPolicy;
 	alt?: string;
 	size?: number;
 	shape?: "circle" | "rounded" | "square";
@@ -55,6 +58,7 @@ const initial = fallback || (alt.trim() ? alt.trim()[0] : "?");
 			alt={alt}
 			{loading}
 			fetchpriority={fetchPriority}
+			referrerpolicy={referrerPolicy}
 			decoding="async"
 			onerror={() => (failed = true)}
 		/>
