@@ -71,6 +71,7 @@ export const ja: Translation = {
 	[Key.projectPhaseShipped]: "リリース済み",
 	[Key.projectPhaseBuilding]: "開発中",
 	[Key.projectPhaseExploring]: "検討中",
+	[Key.projectPhaseArchived]: "アーカイブ済み",
 	[Key.projectVisit]: "プロジェクトを見る",
 	[Key.projectSource]: "ソースを見る",
 	[Key.projectTechnologies]: "使用技術",

@@ -1,7 +1,8 @@
 import type { PageMeta } from "./pageMeta.ts";
 
 /** 项目阶段：强调当前交付状态，不映射为百分比进度。 */
-export type ProjectPhase = "shipped" | "building" | "exploring";
+/** happycola：加了 archived（已归档：不再维护，留个纪念） */
+export type ProjectPhase = "shipped" | "building" | "exploring" | "archived";
 
 /** 项目页筛选分类。 */
 export interface ProjectCategory {
@@ -26,6 +27,8 @@ export interface ProjectItem {
 	technologies: string[];
 	/** 无封面时使用的 Iconify 图标。 */
 	icon?: string;
+	/** 项目自己的图标图片（如应用图标），优先于 icon 显示在图标瓷砖里。 */
+	logo?: string;
 	/** 可选项目封面，建议使用本地 WebP/AVIF。 */
 	cover?: string;
 	/** 封面承载额外信息时提供；纯装饰封面留空。 */
@@ -33,6 +36,10 @@ export interface ProjectItem {
 	/** 代表项目标记，供页面做重点项目识别。 */
 	featured?: boolean;
 	website?: string;
+	/** website 按钮的文字，默认「访问项目」（如链接到视频时写「观看视频」）。 */
+	websiteLabel?: string;
+	/** website 按钮的 Iconify 图标，默认 material-symbols:open-in-new-rounded。 */
+	websiteIcon?: string;
 	repository?: string;
 	/** 自由格式的年份或时间范围，如 2024–2026。 */
 	year?: string;

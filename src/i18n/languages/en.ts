@@ -72,6 +72,7 @@ export const en: Translation = {
 	[Key.projectPhaseShipped]: "Shipped",
 	[Key.projectPhaseBuilding]: "Building",
 	[Key.projectPhaseExploring]: "Exploring",
+	[Key.projectPhaseArchived]: "Archived",
 	[Key.projectVisit]: "Visit project",
 	[Key.projectSource]: "View source",
 	[Key.projectTechnologies]: "Technologies",

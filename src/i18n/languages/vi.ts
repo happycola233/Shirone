@@ -72,6 +72,7 @@ export const vi: Translation = {
 	[Key.projectPhaseShipped]: "Đã phát hành",
 	[Key.projectPhaseBuilding]: "Đang xây dựng",
 	[Key.projectPhaseExploring]: "Đang khám phá",
+	[Key.projectPhaseArchived]: "Đã lưu trữ",
 	[Key.projectVisit]: "Truy cập dự án",
 	[Key.projectSource]: "Xem mã nguồn",
 	[Key.projectTechnologies]: "Công nghệ",

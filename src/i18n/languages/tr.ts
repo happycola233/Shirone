@@ -71,6 +71,7 @@ export const tr: Translation = {
 	[Key.projectPhaseShipped]: "Yayında",
 	[Key.projectPhaseBuilding]: "Geliştiriliyor",
 	[Key.projectPhaseExploring]: "Keşfediliyor",
+	[Key.projectPhaseArchived]: "Arşivlendi",
 	[Key.projectVisit]: "Projeyi ziyaret et",
 	[Key.projectSource]: "Kaynak kodu görüntüle",
 	[Key.projectTechnologies]: "Teknolojiler",

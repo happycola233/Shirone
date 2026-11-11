@@ -45,10 +45,20 @@ const phaseMeta: Record<
 		icon: "material-symbols:explore-outline-rounded",
 		color: "var(--secondary)",
 	},
+	// happycola：已归档（不再维护，留个纪念），用中性灰
+	archived: {
+		key: I18nKey.projectPhaseArchived,
+		icon: "material-symbols:inventory-2-outline-rounded",
+		color: "var(--on-surface-variant)",
+	},
 };
 
 const phase = $derived(phaseMeta[project.phase]);
 const showCover = $derived(Boolean(project.cover) && !coverFailed);
+// happycola：项目自己的图标图片（logo）与自定义 website 按钮（websiteLabel / websiteIcon）
+let logoFailed = $state(false);
+const showLogo = $derived(Boolean(project.logo) && !logoFailed);
+const websiteLabel = $derived(project.websiteLabel || i18n(I18nKey.projectVisit));
 </script>
 
 {#snippet coverImage()}
@@ -81,7 +91,7 @@ const showCover = $derived(Boolean(project.cover) && !coverFailed);
 				href={project.website}
 				target="_blank"
 				rel="noopener noreferrer"
-				aria-label={`${project.title} · ${i18n(I18nKey.projectVisit)}`}
+				aria-label={`${project.title} · ${websiteLabel}`}
 			>
 				{@render coverImage()}
 			</a>
@@ -95,8 +105,12 @@ const showCover = $derived(Boolean(project.cover) && !coverFailed);
 	<div class="project-card__body">
 		<div class="project-card__header">
 			{#if !showCover}
-				<span class="project-card__icon" aria-hidden="true">
-					<Icon icon={project.icon ?? "material-symbols:deployed-code-outline-rounded"} />
+				<span class={`project-card__icon ${showLogo ? "project-card__icon--logo" : ""}`} aria-hidden="true">
+					{#if showLogo}
+						<img src={project.logo} alt="" loading="lazy" decoding="async" onerror={() => (logoFailed = true)} />
+					{:else}
+						<Icon icon={project.icon ?? "material-symbols:deployed-code-outline-rounded"} />
+					{/if}
 				</span>
 			{/if}
 
@@ -107,10 +121,19 @@ const showCover = $derived(Boolean(project.cover) && !coverFailed);
 						<span class="project-card__year">{project.year}</span>
 					{/if}
 				</div>
-				<span class="project-card__phase" data-phase={project.phase}>
-					<Icon icon={phase.icon} aria-hidden="true" />
-					{i18n(phase.key)}
-				</span>
+				<div class="project-card__pills">
+					<span class="project-card__phase" data-phase={project.phase}>
+						<Icon icon={phase.icon} aria-hidden="true" />
+						{i18n(phase.key)}
+					</span>
+					<!-- happycola：无封面时代表项目也要看得出来（原版只在封面上显示角标） -->
+					{#if project.featured && !showCover}
+						<span class="project-card__featured-pill">
+							<Icon icon="material-symbols:star-rounded" aria-hidden="true" />
+							{i18n(I18nKey.pinned)}
+						</span>
+					{/if}
+				</div>
 			</div>
 		</div>
 
@@ -131,8 +154,8 @@ const showCover = $derived(Boolean(project.cover) && !coverFailed);
 			<div class="project-card__actions">
 				{#if project.website}
 					<a href={project.website} target="_blank" rel="noopener noreferrer">
-						<Icon icon="material-symbols:open-in-new-rounded" aria-hidden="true" />
-						{i18n(I18nKey.projectVisit)}
+						<Icon icon={project.websiteIcon || "material-symbols:open-in-new-rounded"} aria-hidden="true" />
+						{websiteLabel}
 					</a>
 				{/if}
 				{#if project.repository}
@@ -156,7 +179,8 @@ const showCover = $derived(Boolean(project.cover) && !coverFailed);
 	box-sizing: border-box
 	min-width: 0
 	overflow: hidden
-	background: var(--card-bg)
+	/* happycola：原为 --card-bg（浅色下纯白），白底的项目图标会和卡片融成一片；换成低一级的容器色来区分 */
+	background: var(--surface-container-low)
 	border: 1px solid var(--outline-variant)
 	border-radius: var(--shape-corner-l)
 	transition:
@@ -169,11 +193,11 @@ const showCover = $derived(Boolean(project.cover) && !coverFailed);
 		border-color: var(--outline)
 		box-shadow: var(--m3e-elevation-2)
 		transform: translateY(-2px)
-		background: unquote("color-mix(in oklab, var(--on-surface) 2%, var(--card-bg))")
+		background: unquote("color-mix(in oklab, var(--on-surface) 2%, var(--surface-container-low))")
 
-	/* 代表项目特色高亮：边框微光 */
+	/* 代表项目特色高亮：主题色边框（happycola：原版 38% 混色几乎看不出来；底色保持纯色，另有「置顶」胶囊标识） */
 	&--featured
-		border-color: unquote("color-mix(in oklab, var(--primary) 38%, var(--outline-variant))")
+		border-color: unquote("color-mix(in oklab, var(--primary) 60%, var(--outline-variant))")
 		&:hover
 			border-color: var(--primary)
 
@@ -298,7 +322,7 @@ const showCover = $derived(Boolean(project.cover) && !coverFailed);
 		background: linear-gradient(135deg,
 			unquote("color-mix(in oklab, var(--primary) 14%, var(--surface-container-high))"),
 			var(--surface-container-highest))
-		border: 1px solid var(--outline-variant)
+		/* happycola：去掉瓷砖描边，卡片本身已有边框，两层框很碍眼 */
 		color: var(--primary)
 		transition:
 			transform var(--m3e-duration-medium) var(--m3e-easing-emphasized-decelerate),
@@ -308,10 +332,27 @@ const showCover = $derived(Boolean(project.cover) && !coverFailed);
 			width: 1.5rem
 			height: 1.5rem
 
+		/* 项目自己的图标：像应用图标一样直接铺满，不加底色、描边和投影（卡片底色已不是纯白，白底图标自然能分开） */
+		&--logo
+			overflow: hidden
+			padding: 0
+			background: transparent
+			border-radius: 22%
+			box-shadow: none
+
+			> img
+				display: block
+				width: 100%
+				height: 100%
+				object-fit: cover
+
 		.project-card:hover &
 			transform: translateY(-0.125rem)
 			box-shadow: var(--m3e-elevation-1)
 
+		/* happycola：真实图标悬停时也不加投影 */
+		.project-card:hover &--logo
+			box-shadow: none
 	&__heading
 		display: flex
 		flex-direction: column
@@ -347,6 +388,30 @@ const showCover = $derived(Boolean(project.cover) && !coverFailed);
 		color: var(--on-surface-variant)
 		font: var(--m3e-type-label-small)
 		font-variant-numeric: tabular-nums
+
+	&__pills
+		display: flex
+		flex-wrap: wrap
+		align-items: center
+		gap: 0.375rem
+
+	/* 代表项目胶囊：和封面角标同一种星标黄 */
+	&__featured-pill
+		display: inline-flex
+		align-items: center
+		gap: 0.25rem
+		padding: 0.125rem 0.5rem
+		border-radius: var(--shape-corner-full)
+		background: rgba(250, 204, 21, 0.14)
+		border: 1px solid rgba(250, 204, 21, 0.35)
+		color: var(--on-surface)
+		font: var(--m3e-type-label-small)
+		font-weight: 600
+
+		> :global(svg)
+			width: 0.875rem
+			height: 0.875rem
+			color: #eab308
 
 	/* 阶段 tonal pill：语义色来自 inline --project-phase-color */
 	&__phase

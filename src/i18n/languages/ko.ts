@@ -70,6 +70,7 @@ export const ko: Translation = {
 	[Key.projectPhaseShipped]: "출시됨",
 	[Key.projectPhaseBuilding]: "개발 중",
 	[Key.projectPhaseExploring]: "탐색 중",
+	[Key.projectPhaseArchived]: "보관됨",
 	[Key.projectVisit]: "프로젝트 방문",
 	[Key.projectSource]: "소스 보기",
 	[Key.projectTechnologies]: "기술",

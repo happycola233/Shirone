@@ -67,6 +67,7 @@ enum I18nKey {
 	projectPhaseShipped = "projectPhaseShipped",
 	projectPhaseBuilding = "projectPhaseBuilding",
 	projectPhaseExploring = "projectPhaseExploring",
+	projectPhaseArchived = "projectPhaseArchived",
 	projectVisit = "projectVisit",
 	projectSource = "projectSource",
 	projectTechnologies = "projectTechnologies",

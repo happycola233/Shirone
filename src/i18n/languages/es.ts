@@ -71,6 +71,7 @@ export const es: Translation = {
 	[Key.projectPhaseShipped]: "Publicado",
 	[Key.projectPhaseBuilding]: "En desarrollo",
 	[Key.projectPhaseExploring]: "En exploración",
+	[Key.projectPhaseArchived]: "Archivado",
 	[Key.projectVisit]: "Visitar proyecto",
 	[Key.projectSource]: "Ver código",
 	[Key.projectTechnologies]: "Tecnologías",

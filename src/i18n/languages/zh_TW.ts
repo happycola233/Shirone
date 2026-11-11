@@ -66,6 +66,7 @@ export const zh_TW: Translation = {
 	[Key.projectPhaseShipped]: "已發佈",
 	[Key.projectPhaseBuilding]: "建置中",
 	[Key.projectPhaseExploring]: "探索中",
+	[Key.projectPhaseArchived]: "已封存",
 	[Key.projectVisit]: "造訪專案",
 	[Key.projectSource]: "查看原始碼",
 	[Key.projectTechnologies]: "技術棧",

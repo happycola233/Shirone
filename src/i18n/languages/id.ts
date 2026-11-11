@@ -72,6 +72,7 @@ export const id: Translation = {
 	[Key.projectPhaseShipped]: "Dirilis",
 	[Key.projectPhaseBuilding]: "Sedang dibuat",
 	[Key.projectPhaseExploring]: "Sedang dieksplorasi",
+	[Key.projectPhaseArchived]: "Diarsipkan",
 	[Key.projectVisit]: "Kunjungi proyek",
 	[Key.projectSource]: "Lihat sumber",
 	[Key.projectTechnologies]: "Teknologi",

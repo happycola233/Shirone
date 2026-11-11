@@ -66,6 +66,7 @@ export const th: Translation = {
 	[Key.projectPhaseShipped]: "เผยแพร่แล้ว",
 	[Key.projectPhaseBuilding]: "กำลังพัฒนา",
 	[Key.projectPhaseExploring]: "กำลังสำรวจ",
+	[Key.projectPhaseArchived]: "เก็บถาวรแล้ว",
 	[Key.projectVisit]: "เยี่ยมชมโปรเจกต์",
 	[Key.projectSource]: "ดูซอร์สโค้ด",
 	[Key.projectTechnologies]: "เทคโนโลยี",
