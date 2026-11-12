@@ -5,7 +5,9 @@
 	padding: 0 var(--m3e-space-1);
 	border: 0;
 	border-radius: var(--shape-corner-xs);
-	background: var(--surface-container-high);
+	/* happycola：原来是 var(--surface-container-high)，深色模式下和卡片底色（--card-bg）是同一个颜色，黑幕看不见。
+	   改成在背景上叠一层半透明的文字色，浅色/深色、放在任何底色上都能看出来。 */
+	background: color-mix(in oklab, var(--on-surface) 12%, transparent);
 	color: var(--on-surface);
 	font: inherit;
 	line-height: inherit;
