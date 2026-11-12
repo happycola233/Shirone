@@ -33,7 +33,8 @@ const Content = rendered?.Content;
 
 <MainGridLayout title={pageTitle} description={pageDescription} page="friends">
     {markdownStylesheetAssets.map(({ pack, css }) => <style is:inline slot="head" data-swup-optional={pack} set:html={css}></style>)}
-    <FriendSectionWithPartners friends={getFriendsList()} partners={biliPartners} title={pageTitle} subtitle={pageDescription} client:load></FriendSectionWithPartners>
+    <!-- happycola：友链列表 + 动态获取的 B 站小伙伴；分页条数沿用上游的 friendsConfig.pageSize -->
+    <FriendSectionWithPartners friends={getFriendsList()} partners={biliPartners} title={pageTitle} subtitle={pageDescription} pageSize={friendsConfig.pageSize} client:load></FriendSectionWithPartners>
     {Content && (
         <Card color="var(--card-bg)" radius="l" class="mt-4 p-6 lg:p-8 relative w-full onload-animation">
             <Markdown class="mt-2">

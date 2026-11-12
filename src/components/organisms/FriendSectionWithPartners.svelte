@@ -28,11 +28,14 @@ let {
 	partners,
 	title,
 	subtitle,
+	pageSize,
 }: {
 	friends?: FriendItem[];
 	partners?: BiliPartners;
 	title?: string;
 	subtitle?: string;
+	/** 每页条数，原样交给 FriendSection（上游 2026-11 加的分页） */
+	pageSize?: number;
 } = $props();
 
 const CACHE_KEY = "happycola:bili-partners";
@@ -127,4 +130,4 @@ onMount(() => {
 });
 </script>
 
-<FriendSection friends={merged} {title} {subtitle} />
+<FriendSection friends={merged} {title} {subtitle} {pageSize} />
