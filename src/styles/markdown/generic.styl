@@ -6,6 +6,11 @@
     border: 0
     border-top: 1px solid var(--line-divider)
 
+  // happycola：引用块里的分隔线默认上下各留 3em（Tailwind 排版默认值），看起来像空了两行；
+  // 改成和段落间距一样。正文里的分隔线保持原样。
+  blockquote hr
+    margin: 1.25em 0
+
   iframe
     border-radius: var(--shape-corner-m)
     margin-left: auto
