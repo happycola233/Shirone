@@ -25,7 +25,9 @@ test("renders an ArtPlayer directive as a native SSR video", async () => {
 	assert.match(result.code, /preload="none"/);
 	assert.match(result.code, /playsinline/);
 	assert.match(result.code, /aria-label="Example video"/);
-	assert.match(result.code, /href="https:\/\/media\.example\.com\/video\.mp4"/);
+	assert.match(result.code, /src="https:\/\/media\.example\.com\/video\.mp4"/);
+	// happycola：我们去掉了视频下方的标题 + 网址说明栏
+	assert.doesNotMatch(result.code, /<figcaption|href=/);
 	assert.doesNotMatch(result.code, /<iframe|<script/);
 });
 

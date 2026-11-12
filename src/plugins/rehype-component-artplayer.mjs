@@ -9,6 +9,8 @@ export function ArtPlayerComponent(properties, children) {
 	if (!embed) return null;
 	const { src, title, preload } = embed;
 
+	// happycola：去掉视频下方的标题 + 网址说明栏（标题和文章标题重复，中文文件名的网址转码后很长很难看）。
+	// 标题仍作为 aria-label 留给读屏软件。
 	return h("figure", { class: "m3-artplayer not-prose", dataArtplayer: true }, [
 		h("video", {
 			class: "m3-artplayer__video",
@@ -18,18 +20,5 @@ export function ArtPlayerComponent(properties, children) {
 			playsInline: true,
 			ariaLabel: title,
 		}),
-		h("figcaption", { class: "m3-artplayer__caption" }, [
-			h("strong", { class: "m3-artplayer__title" }, title),
-			h(
-				"a",
-				{
-					class: "m3-artplayer__source m3-state-layer",
-					href: src,
-					target: "_blank",
-					rel: "noopener noreferrer",
-				},
-				src,
-			),
-		]),
 	]);
 }
