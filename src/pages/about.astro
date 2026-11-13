@@ -1,6 +1,7 @@
 ---
 import { getEntry, render } from "astro:content";
 import Card from "@components/atoms/display/Card.svelte";
+import PageHeader from "@components/atoms/display/PageHeader.astro";
 import Markdown from "@components/content/Markdown.astro";
 import CommentSection from "@components/organisms/comment/CommentSection.astro";
 import I18nKey from "@i18n/i18nKey";
@@ -32,6 +33,12 @@ const markdownStylesheetAssets = await getMarkdownStylesheetAssets(
     {markdownStylesheetAssets.map(({ pack, css }) => <style is:inline slot="head" data-swup-optional={pack} set:html={css}></style>)}
     <div class="flex w-full rounded-[var(--shape-corner-l)] overflow-hidden relative min-h-32">
         <Card color="var(--card-bg)" radius="l" class="z-10 p-6 lg:p-8 relative w-full">
+            <!-- happycola：顶部加「关于」大标题，和友链、分类等页面一致；图标同导航栏的「关于」 -->
+            <PageHeader
+                icon="material-symbols:info-outline-rounded"
+                title={pageTitle}
+                subtitle={pageDescription !== pageTitle ? pageDescription : undefined}
+            />
             <Markdown class="mt-2">
                 <Content />
             </Markdown>
