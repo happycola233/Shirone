@@ -59,6 +59,14 @@ const showCover = $derived(Boolean(project.cover) && !coverFailed);
 let logoFailed = $state(false);
 const showLogo = $derived(Boolean(project.logo) && !logoFailed);
 const websiteLabel = $derived(project.websiteLabel || i18n(I18nKey.projectVisit));
+
+// happycola：首屏的卡片在 JS 激活前就已经排好、显示出来了（projects.astro 的内联脚本会给网格
+// 打上 data-ssr-shown）。激活时再播一遍入场动画会「看得见 → 突然消失 → 再淡入」闪一下，所以跳过；
+// 筛选 / 搜索后重建的网格没有这个标记，照常播放。
+function revealCard(node: HTMLElement, params: { delay: number }) {
+	if (node.parentElement?.hasAttribute("data-ssr-shown")) return;
+	return reveal(node, params);
+}
 </script>
 
 {#snippet coverImage()}
@@ -82,7 +90,7 @@ const websiteLabel = $derived(project.websiteLabel || i18n(I18nKey.projectVisit)
 	class={`project-card ${showCover ? "project-card--with-cover" : "project-card--without-cover"} ${project.featured ? "project-card--featured" : ""}`}
 	data-project={project.key}
 	style={`--project-phase-color: ${phase.color};`}
-	use:reveal={{ delay }}
+	use:revealCard={{ delay }}
 >
 	{#if showCover}
 		{#if project.website}

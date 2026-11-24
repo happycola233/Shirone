@@ -50,13 +50,21 @@ const statusMeta: Record<
 
 const meta = $derived(statusMeta[device.status]);
 const showImage = $derived(Boolean(device.image) && !coverFailed);
+
+// happycola：首屏的卡片在 JS 激活前就已经排好、显示出来了（devices.astro 的内联脚本会给网格
+// 打上 data-ssr-shown）。激活时再播一遍入场动画会「看得见 → 突然消失 → 再淡入」闪一下，所以跳过；
+// 筛选 / 搜索后重建的网格没有这个标记，照常播放。（和 ProjectCard.svelte 同一处理）
+function revealCard(node: HTMLElement, params: { delay: number }) {
+	if (node.parentElement?.hasAttribute("data-ssr-shown")) return;
+	return reveal(node, params);
+}
 </script>
 
 <article
 	class={`device-card ${showImage ? "device-card--with-image" : "device-card--without-image"} ${device.featured ? "device-card--featured" : ""}`}
 	data-device={device.id}
 	style={`--device-status-color: ${meta.color};`}
-	use:reveal={{ delay }}
+	use:revealCard={{ delay }}
 >
 	{#if showImage}
 		<div class="device-card__media">

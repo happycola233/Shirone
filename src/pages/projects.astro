@@ -32,4 +32,34 @@ const items = resolveProjectsData(projectsConfig);
 		subtitle={pageDescription}
 		client:visible
 	/>
+
+	<!-- happycola：首屏防叠。项目网格在电脑宽度下是瀑布流（行高 8px，每张卡片占几行要靠 JS 算），
+	     原版要等组件激活（client:visible，还要下载组件脚本）才排，之前所有卡片都挤在同一个位置
+	     叠成一摞。这里照文章列表（PostPage.astro）的做法，HTML 一出来就先按同样的规则排一遍；
+	     激活后 ProjectSection 的 setupMasonry 会接手重排。算法和常量与 utils/masonry.ts 一致
+	     （行高 8px、行距 16px）。站内换页时 swup 的脚本插件会重新执行这段。
+	     data-ssr-shown 告诉卡片：首屏已经显示，激活时不用再播入场动画（见 ProjectCard.svelte）。 -->
+	<script is:inline>
+	(function () {
+		var grid = document.querySelector(".projects-section__grid");
+		if (!grid) return;
+		grid.setAttribute("data-ssr-shown", "");
+		var style = getComputedStyle(grid);
+		/* 窄屏是普通单列（行高 auto），本来就不会叠，不用排 */
+		if (style.gridAutoRows === "auto" || style.gridAutoRows === "normal") return;
+		var cols = style.gridTemplateColumns.split(" ").filter(Boolean).length;
+		if (!cols) return;
+		var heights = new Array(cols).fill(0);
+		var cards = grid.children;
+		for (var i = 0; i < cards.length; i++) {
+			var card = cards[i];
+			var shortest = 0;
+			for (var c = 1; c < cols; c++) if (heights[c] < heights[shortest]) shortest = c;
+			var h = card.offsetHeight + 16;
+			card.style.gridColumnStart = String(shortest + 1);
+			card.style.gridRowEnd = "span " + Math.ceil(h / 8);
+			heights[shortest] += h;
+		}
+	})();
+	</script>
 </MainGridLayout>
