@@ -29,6 +29,13 @@ export type BannerThemeSource = {
 
 export type BannerSourceValue = string[] | BannerThemeSource;
 
+/** happycola：动态横幅的一档视频 */
+export type BannerVideoVariant = {
+	width: number;
+	height: number;
+	codec: "av1" | "hevc" | "h264";
+};
+
 export type BannerConfig = {
 	src: {
 		desktop: BannerSourceValue;
@@ -49,6 +56,32 @@ export type BannerConfig = {
 		startHours: number[];
 		/** 交界前后各渐变多少分钟，0 表示到点直接换（默认 30） */
 		blendMinutes?: number;
+	};
+	/**
+	 * happycola：动态横幅。和 timeOfDay 一起用：每个时段一段循环视频，顺序同 src；
+	 * 静态图先显示，视频的第一帧和静态图是同一帧，加载好后无缝接上。
+	 * 文件放在 `${dir}/${desktop|mobile}/${name}-${width}.${codec}.mp4`。
+	 * 访客开了「减少动态效果」或省流量模式、浏览器放不流畅时，只显示静态图。
+	 */
+	video?: {
+		enable: boolean;
+		/** 视频目录（网站根路径下），如 /assets/banner/video */
+		dir: string;
+		/** 每个时段的文件名前缀，和 src 数组一一对应 */
+		names: string[];
+		/** 帧率，判断浏览器能不能流畅播放时用 */
+		fps: number;
+		/** 关键帧间隔（秒，默认 2）：换时段时新视频跳到下一个关键帧去和旧视频对齐，压视频时要按这个设 */
+		keyframeInterval?: number;
+		/** 电脑端各档：宽、高、编码；脚本按屏幕大小和浏览器解码能力挑一档 */
+		desktop: BannerVideoVariant[];
+		/** 手机端各档，空数组表示手机只显示静态图 */
+		mobile: BannerVideoVariant[];
+	};
+	/** happycola：横幅右下角的一行署名小字（如原作者），可带链接 */
+	credit?: {
+		text: string;
+		url?: string;
 	};
 	dim: {
 		enable: boolean;

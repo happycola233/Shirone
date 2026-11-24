@@ -45,6 +45,28 @@ const timeOfDay =
 			}
 		: null;
 const homeOnly = siteConfig.banner.homeOnly === true;
+// happycola：动态横幅（banner.video），只和按时间切换一起用；把每档视频展开成各时段的文件网址交给脚本
+const videoConfig = siteConfig.banner.video;
+const bannerVideo =
+	timeOfDay && videoConfig?.enable && videoConfig.names.length > 0
+		? {
+				fps: videoConfig.fps,
+				keyframeInterval: videoConfig.keyframeInterval ?? 2,
+				...Object.fromEntries(
+					(["desktop", "mobile"] as const).map((group) => [
+						group,
+						(videoConfig[group] ?? []).map((variant) => ({
+							...variant,
+							srcs: videoConfig.names.map((name) =>
+								url(
+									`${videoConfig.dir.replace(/\/+$/, "")}/${group}/${name}-${variant.width}.${variant.codec}.mp4`,
+								),
+							),
+						})),
+					]),
+				),
+			}
+		: null;
 
 const optimizeBannerImage = async (
 	src: string,
@@ -225,6 +247,7 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 	data-mobile-srcsets={timeOfDay ? JSON.stringify(mobileSrcsets) : undefined}
 	data-desktop-aspect={timeOfDay ? aspectOf(initialDesktopImage) : undefined}
 	data-mobile-aspect={timeOfDay ? aspectOf(initialMobileImage) : undefined}
+	data-video={bannerVideo ? JSON.stringify(bannerVideo) : undefined}
 >
 	<div class="banner-stage__media" aria-hidden="true">
 		{/* happycola：按时间切换时不输出 <source>，免得浏览器先下载一张用不上的图；由脚本挑好图、加载完再淡入 */}
@@ -273,6 +296,13 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 		</picture>
 		)}
 		<img class="banner-stage__image banner-stage__image--back" alt="" />
+		{/* happycola：动态横幅的两层视频，叠在静态图上；网址由脚本按屏幕和浏览器能力挑好再填 */}
+		{bannerVideo && (
+			<Fragment>
+				<video class="banner-stage__video banner-stage__video--fading" muted playsinline loop preload="none" disablepictureinpicture tabindex="-1" style={`object-position: ${siteConfig.banner.position ?? "center"};`}></video>
+				<video class="banner-stage__video banner-stage__video--fading" muted playsinline loop preload="none" disablepictureinpicture tabindex="-1" style={`object-position: ${siteConfig.banner.position ?? "center"};`}></video>
+			</Fragment>
+		)}
 	</div>
 	{siteConfig.banner.dim.enable && (
 		<div class="banner-stage__scrim" style={`--banner-dim-opacity: ${dimOpacity}`}></div>
@@ -307,6 +337,16 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 			</div>
 		</div>
 	</div>
+	{/* happycola：横幅右下角的署名（banner.credit） */}
+	{siteConfig.banner.credit?.text && (
+		siteConfig.banner.credit.url ? (
+			<a class="banner-stage__credit" href={siteConfig.banner.credit.url} target="_blank" rel="noopener noreferrer">
+				{siteConfig.banner.credit.text}
+			</a>
+		) : (
+			<span class="banner-stage__credit">{siteConfig.banner.credit.text}</span>
+		)
+	)}
 	{siteConfig.banner.waves.enable && <BannerWaves />}
 </section>
 
@@ -544,7 +584,7 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 	}
 
 	// 等图层实际的不透明度到达目标（CSS 过渡真的走完）；最多等过渡时长再加 0.5 秒
-	function waitForLayerOpacity(layer: HTMLImageElement, target: number): Promise<void> {
+	function waitForLayerOpacity(layer: HTMLElement, target: number): Promise<void> {
 		const limit =
 			performance.now() + (prefersReducedMotion() ? 0 : getFadeDuration()) + 500;
 		return new Promise((resolve) => {
@@ -651,6 +691,8 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 		if (!timeOfDay || stage?.hidden !== false || !group) return;
 		if (currentTimeOfDayTarget(group)?.key === lastTimeOfDayTarget) return;
 		void applyTimeOfDay(group, instant);
+		// 视频跟着换（视频函数自己判断要不要换、现在能不能换）
+		void syncBannerVideo();
 	}
 
 	function stopTimeOfDayClock() {
@@ -662,6 +704,403 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 	function startTimeOfDayClock() {
 		if (timeOfDayTimer !== null) return;
 		timeOfDayTimer = window.setInterval(() => refreshTimeOfDay(), 1000);
+	}
+
+	// happycola：动态横幅（banner.video）。两个 <video> 叠在静态图上面，轮流当「前层」：
+	// - 第一次：静态图照常先显示；视频停在第一帧（和静态图是同一帧）淡入，盖住后再开始播放，看不出接缝。
+	// - 到点换时段：新视频先跳到旧视频稍后的时刻，等旧视频播到那里，两段一起播并淡入。
+	//   四段视频逐帧对齐，所以过渡时只有光线在变，人物不会重影。
+	// - 在电脑和手机尺寸之间切换：同样对齐时刻，但直接换（两套裁切不同，淡入会重影）。
+	// - 不在首页、页面切到后台、横幅滚出屏幕时暂停。
+	// - 访客开了「减少动态效果」或省流量、浏览器不让自动播放或放不流畅时，只显示静态图。
+	interface BannerVideoVariant {
+		width: number;
+		height: number;
+		codec: "av1" | "hevc" | "h264";
+		srcs: string[];
+	}
+
+	interface BannerVideoOptions {
+		fps: number;
+		keyframeInterval: number;
+		desktop: BannerVideoVariant[];
+		mobile: BannerVideoVariant[];
+	}
+
+	function parseBannerVideoVariants(value: unknown): BannerVideoVariant[] {
+		if (!Array.isArray(value)) return [];
+		return value.filter(
+			(item): item is BannerVideoVariant =>
+				typeof item?.width === "number" &&
+				typeof item?.height === "number" &&
+				["av1", "hevc", "h264"].includes(item?.codec) &&
+				Array.isArray(item?.srcs),
+		);
+	}
+
+	function parseBannerVideo(value: string | undefined): BannerVideoOptions | null {
+		if (!value) return null;
+		try {
+			const parsed = JSON.parse(value);
+			return {
+				fps: typeof parsed?.fps === "number" ? parsed.fps : 30,
+				keyframeInterval:
+					typeof parsed?.keyframeInterval === "number" && parsed.keyframeInterval > 0
+						? parsed.keyframeInterval
+						: 2,
+				desktop: parseBannerVideoVariants(parsed?.desktop),
+				mobile: parseBannerVideoVariants(parsed?.mobile),
+			};
+		} catch {
+			return null;
+		}
+	}
+
+	const VIDEO_SHOWN = "banner-stage__video--shown";
+	const VIDEO_FADING = "banner-stage__video--fading";
+	const bannerVideo = parseBannerVideo(stage?.dataset.video);
+	const videoLayers = stage
+		? [...stage.querySelectorAll<HTMLVideoElement>(".banner-stage__video")]
+		: [];
+	let videoFront = 0;
+	let videoGeneration = 0;
+	// 正在显示或正在切换过去的那段（尺寸:时段）；空字符串表示没有视频
+	let videoTargetKey = "";
+	let videoSwitching = false;
+	let videoInView = true;
+	// 浏览器不让自动播放（如 iPhone 低电量模式）或视频加载出错：这次访问只用静态图
+	let videoBlocked = false;
+	const videoVariantChoice = new Map<BannerViewport, Promise<BannerVideoVariant | null>>();
+
+	// 编码字符串只用来问浏览器「能不能放、放得流畅吗」，级别按分辨率和帧率估（视频都是 10 位色深，H.264 除外）
+	function videoContentType(variant: BannerVideoVariant, fps: number): string {
+		if (variant.codec === "av1") {
+			const samples = variant.width * variant.height;
+			const level =
+				samples <= 2_359_296 && samples * fps <= 70_778_880
+					? "08"
+					: samples * fps <= 267_386_880
+						? "12"
+						: "13";
+			return `video/mp4; codecs="av01.0.${level}M.10"`;
+		}
+		if (variant.codec === "hevc") {
+			const samples = variant.width * variant.height;
+			const level =
+				samples <= 2_228_224 && samples * fps <= 66_846_720
+					? "120"
+					: samples * fps <= 267_386_880
+						? "150"
+						: "153";
+			return `video/mp4; codecs="hvc1.2.4.L${level}.B0"`;
+		}
+		const macroblocks = Math.ceil(variant.width / 16) * Math.ceil(variant.height / 16);
+		const level =
+			macroblocks <= 8192 && macroblocks * fps <= 245_760
+				? "28"
+				: macroblocks <= 22_080 && macroblocks * fps <= 589_824
+					? "32"
+					: "33";
+		return `video/mp4; codecs="avc1.6400${level}"`;
+	}
+
+	async function probeVideoVariant(
+		variant: BannerVideoVariant,
+		fps: number,
+	): Promise<{ smooth: boolean; powerEfficient: boolean }> {
+		const contentType = videoContentType(variant, fps);
+		if (!videoLayers[0]?.canPlayType(contentType)) {
+			return { smooth: false, powerEfficient: false };
+		}
+		if (!navigator.mediaCapabilities?.decodingInfo) {
+			return { smooth: true, powerEfficient: true };
+		}
+		try {
+			const info = await navigator.mediaCapabilities.decodingInfo({
+				type: "file",
+				video: {
+					contentType,
+					width: variant.width,
+					height: variant.height,
+					framerate: fps,
+					bitrate: Math.round(variant.width * variant.height * fps * 0.02),
+				},
+			});
+			// Safari 对 HEVC 一律回答 smooth=false，其实是硬件解码、播放很顺（2026-11-25 iPad 实测），
+			// 所以「流畅」或「硬件解码」有一个就算能放
+			return {
+				smooth: info.supported && (info.smooth || info.powerEfficient),
+				powerEfficient: info.supported && info.powerEfficient,
+			};
+		} catch {
+			return { smooth: true, powerEfficient: true };
+		}
+	}
+
+	// 和静态图一样按屏幕（不是窗口）尺寸选够用的一档；AV1 优先（同样大小更清楚），
+	// 其次 HEVC（苹果设备大多不能放 AV1，但都能硬件解 HEVC），最后 H.264。
+	// 优先选省电的（显卡硬件解码），都不省电时退而选能流畅播放的；都不行就不放视频。
+	// 电脑上 1080p 以内的软件解码很轻，不为了硬件解码换成更大的文件；手机上省电优先
+	async function chooseVideoVariant(
+		group: BannerViewport,
+	): Promise<BannerVideoVariant | null> {
+		if (!bannerVideo) return null;
+		const width = Math.max(window.screen.width, window.innerWidth);
+		const height = Math.max(window.screen.height, window.innerHeight);
+		const cheapToDecode = (variant: BannerVideoVariant) =>
+			group === "desktop" && variant.width * variant.height <= 1920 * 1080;
+		let fallback: BannerVideoVariant | null = null;
+		for (const codec of ["av1", "hevc", "h264"] as const) {
+			const list = bannerVideo[group]
+				.filter((variant) => variant.codec === codec)
+				.sort((a, b) => a.width - b.width);
+			if (!list.length) continue;
+			const needed =
+				Math.max(width, height * (list[0].width / list[0].height)) *
+				(window.devicePixelRatio || 1);
+			let start = list.findIndex((variant) => variant.width >= needed * 0.95);
+			if (start < 0) start = list.length - 1;
+			for (let i = start; i >= 0; i--) {
+				const result = await probeVideoVariant(list[i], bannerVideo.fps);
+				if (!result.smooth) continue;
+				if (result.powerEfficient || cheapToDecode(list[i])) return list[i];
+				fallback ??= list[i];
+				break;
+			}
+		}
+		return fallback;
+	}
+
+	function pickVideoVariant(group: BannerViewport): Promise<BannerVideoVariant | null> {
+		let choice = videoVariantChoice.get(group);
+		if (!choice) {
+			choice = chooseVideoVariant(group);
+			videoVariantChoice.set(group, choice);
+		}
+		return choice;
+	}
+
+	function videoAllowed(): boolean {
+		const connection = (
+			navigator as Navigator & { connection?: { saveData?: boolean } }
+		).connection;
+		return (
+			bannerVideo !== null &&
+			videoLayers.length === 2 &&
+			!videoBlocked &&
+			!prefersReducedMotion() &&
+			connection?.saveData !== true
+		);
+	}
+
+	function videoShouldPlay(): boolean {
+		return stage?.hidden === false && !document.hidden && videoInView;
+	}
+
+	function setVideoShown(video: HTMLVideoElement, shown: boolean, fade: boolean) {
+		if (!fade) video.classList.remove(VIDEO_FADING);
+		video.classList.toggle(VIDEO_SHOWN, shown);
+		if (!fade) {
+			void video.offsetWidth;
+			video.classList.add(VIDEO_FADING);
+		}
+	}
+
+	function resetVideo(video: HTMLVideoElement) {
+		video.pause();
+		setVideoShown(video, false, false);
+		delete video.dataset.videoKey;
+		delete video.dataset.videoGroup;
+		if (video.hasAttribute("src")) {
+			video.removeAttribute("src");
+			video.load();
+		}
+	}
+
+	function hideBannerVideos() {
+		if (!videoTargetKey && !videoLayers.some((video) => video.hasAttribute("src"))) return;
+		videoGeneration += 1;
+		videoTargetKey = "";
+		videoSwitching = false;
+		for (const video of videoLayers) resetVideo(video);
+	}
+
+	// 切换进行中时只停正在显示的那层：新的一层正在加载，这时暂停会打断加载；切换结束时会再看一次该不该播
+	function pauseBannerVideos() {
+		videoLayers.forEach((video, index) => {
+			if (videoSwitching && index !== videoFront) return;
+			if (!video.paused) video.pause();
+		});
+	}
+
+	function playFrontVideo() {
+		const front = videoLayers[videoFront];
+		if (front?.classList.contains(VIDEO_SHOWN) && front.paused) {
+			front.play().catch(() => undefined);
+		}
+	}
+
+	function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
+		return new Promise((resolve) => {
+			const done = () => {
+				window.clearTimeout(timer);
+				video.removeEventListener("seeked", done);
+				resolve();
+			};
+			const timer = window.setTimeout(done, 4000);
+			video.addEventListener("seeked", done);
+			video.currentTime = time;
+		});
+	}
+
+	function nextFrames(count = 2): Promise<void> {
+		return new Promise((resolve) => {
+			const step = (left: number) => {
+				if (left <= 0) resolve();
+				else window.requestAnimationFrame(() => step(left - 1));
+			};
+			step(count);
+		});
+	}
+
+	// 等正在播放的视频播到 time（考虑循环绕回开头），最多等 maxWait 秒。刚好到（差不到 0.1 秒）返回 true；
+	// 跳转太慢、早就错过了，或者等太久，返回 false
+	function waitForVideoTime(
+		video: HTMLVideoElement,
+		time: number,
+		maxWait: number,
+	): Promise<boolean> {
+		const duration = video.duration;
+		const limit = performance.now() + (maxWait + 1) * 1000;
+		return new Promise((resolve) => {
+			const check = () => {
+				const ahead = (((time - video.currentTime) % duration) + duration) % duration;
+				const behind = duration - ahead;
+				if (ahead < 0.04 || behind < 0.1) resolve(true);
+				else if (
+					ahead > maxWait + 0.5 ||
+					video.paused ||
+					performance.now() > limit
+				) {
+					resolve(false);
+				}
+				else window.requestAnimationFrame(check);
+			};
+			check();
+		});
+	}
+
+	async function syncBannerVideo() {
+		const group = runtime.activeGroup;
+		const target = group ? currentTimeOfDayTarget(group) : null;
+		if (!videoAllowed() || !group || !target) {
+			hideBannerVideos();
+			return;
+		}
+		const key = `${group}:${target.blend.from}`;
+		if (key === videoTargetKey) {
+			if (!videoShouldPlay()) pauseBannerVideos();
+			else if (!videoSwitching) playFrontVideo();
+			return;
+		}
+		// 看不见的时候不切换，等回到首页、横幅重新露出来再说
+		if (!videoShouldPlay()) {
+			pauseBannerVideos();
+			return;
+		}
+
+		videoTargetKey = key;
+		videoSwitching = true;
+		videoGeneration += 1;
+		const generation = videoGeneration;
+		const stale = () => generation !== videoGeneration;
+
+		// 上一次切换淡入到一半被打断：让它直接完成，从它接着换
+		const pendingBack = videoLayers[videoFront === 0 ? 1 : 0];
+		if (pendingBack.classList.contains(VIDEO_SHOWN)) {
+			setVideoShown(pendingBack, true, false);
+			resetVideo(videoLayers[videoFront]);
+			videoFront = videoFront === 0 ? 1 : 0;
+		}
+
+		const variant = await pickVideoVariant(group);
+		if (stale()) return;
+		const src = variant?.srcs[target.blend.from];
+		if (!variant || !src) {
+			videoSwitching = false;
+			for (const video of videoLayers) resetVideo(video);
+			return;
+		}
+
+		const front = videoLayers[videoFront];
+		const backIndex = videoFront === 0 ? 1 : 0;
+		const back = videoLayers[backIndex];
+		const frontShown = front.classList.contains(VIDEO_SHOWN) && front.duration > 0;
+		const sameGroup = front.dataset.videoGroup === group;
+
+		resetVideo(back);
+		back.dataset.videoKey = key;
+		back.dataset.videoGroup = group;
+		back.muted = true;
+		back.src = src;
+		// 先试着播一下：确认浏览器允许自动播放，手机浏览器也要这样才肯开始加载。
+		// 不让自动播放（NotAllowedError，如 iPhone 低电量模式）或放不了（NotSupportedError）就只用静态图；
+		// 被别的操作打断（AbortError）不算，下次触发时重来
+		try {
+			await back.play();
+		} catch (error) {
+			if (stale()) return;
+			if ((error as DOMException)?.name === "AbortError") {
+				videoTargetKey = "";
+				videoSwitching = false;
+				resetVideo(back);
+				return;
+			}
+			videoBlocked = true;
+			hideBannerVideos();
+			return;
+		}
+		if (stale()) return;
+		back.pause();
+
+		if (frontShown) {
+			// 对齐时刻：新视频跳到旧视频前面的下一个关键帧，等旧视频播到那里再一起播。
+			// 跳到关键帧几乎不用解码；跳到两个关键帧中间要从前一个关键帧解起，4K 软件解码要好几秒（内容仓 MIGRATION.md 第 21 节）
+			if (front.paused) front.play().catch(() => undefined);
+			const gop = bannerVideo?.keyframeInterval ?? 2;
+			for (let attempt = 0; attempt < 3; attempt++) {
+				const next = Math.ceil((front.currentTime + 0.3) / gop) * gop;
+				// 多跳 0.01 秒，落在关键帧那一帧上（不会因为小数误差落到前一帧）
+				const at = (next >= back.duration - 0.05 ? 0 : next) + 0.01;
+				await seekVideo(back, at);
+				if (stale()) return;
+				const synced = await waitForVideoTime(front, at, gop + 0.3);
+				if (stale()) return;
+				if (synced) break;
+			}
+			back.play().catch(() => undefined);
+		} else {
+			// 第一次：停在第一帧（和静态图同一帧）
+			await seekVideo(back, 0);
+			if (stale()) return;
+		}
+		await nextFrames();
+		if (stale()) return;
+
+		front.style.zIndex = "0";
+		back.style.zIndex = "1";
+		if (frontShown && !sameGroup) {
+			setVideoShown(back, true, false);
+		} else {
+			setVideoShown(back, true, true);
+			await waitForLayerOpacity(back, 1);
+			if (stale()) return;
+		}
+		resetVideo(front);
+		videoFront = backIndex;
+		videoSwitching = false;
+		if (videoShouldPlay()) playFrontVideo();
+		else pauseBannerVideos();
 	}
 
 	function currentPage(): SidebarPage | undefined {
@@ -1230,6 +1669,7 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 			stopRotation();
 			stopLayerMotions();
 			stopTimeOfDayClock();
+			pauseBannerVideos();
 			return;
 		}
 
@@ -1241,6 +1681,7 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 				runtime.activeGroup !== null && runtime.activeGroup !== state.assetGroup;
 			runtime.activeGroup = state.assetGroup;
 			refreshTimeOfDay(state.assetGroup, viewportChanged);
+			void syncBannerVideo();
 			if (document.hidden) stopTimeOfDayClock();
 			else startTimeOfDayClock();
 			return;
@@ -1279,19 +1720,36 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 			window.addEventListener(THEME_CHANGE_EVENT, () => syncBanner());
 			// happycola：访客去系统设置里改了时间再切回来，立刻按新时间换图
 			window.addEventListener("focus", () => refreshTimeOfDay());
+			// happycola：横幅滚出屏幕时暂停视频，滚回来接着放
+			if (bannerVideo && "IntersectionObserver" in window) {
+				new IntersectionObserver((entries) => {
+					videoInView = entries.some((entry) => entry.isIntersecting);
+					void syncBannerVideo();
+				}).observe(stage);
+			}
 			window.addEventListener("resize", () => {
 				if (currentViewport() === "desktop" && stage?.hidden === false) {
 					scheduleContextTitleFit();
 				}
 			});
 			window.matchMedia("(min-width: 1024px)").addEventListener("change", () => syncBanner());
-				window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", () => {
+				const handleReducedMotionChange = () => {
 					if (prefersReducedMotion()) {
 						stopLayerMotions();
 						showSubtitleImmediately();
 					}
 					syncBanner();
-				});
+				};
+				window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", handleReducedMotionChange);
+				// happycola：主题显示设置里的「减少动态效果」开关只改 <html> 的 motion-reduced 类、不发事件，
+				// 横幅要等下次换页才反应过来；盯着这个类，一变就立刻停 / 放横幅视频
+				let motionReducedClass = document.documentElement.classList.contains("motion-reduced");
+				new MutationObserver(() => {
+					const reduced = document.documentElement.classList.contains("motion-reduced");
+					if (reduced === motionReducedClass) return;
+					motionReducedClass = reduced;
+					handleReducedMotionChange();
+				}).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 			document.addEventListener("visibilitychange", () => {
 					if (document.hidden) {
 						pauseLayerMotions();
@@ -1346,6 +1804,45 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 
 		.banner-stage__image--active
 			opacity: 1
+
+		// happycola：动态横幅的视频层，叠在静态图上面；媒体层自成一层，视频的 z-index 不会盖到文字上
+		.banner-stage__media
+			z-index: 0
+
+		.banner-stage__video
+			position: absolute
+			inset: 0
+			width: 100%
+			height: 100%
+			object-fit: cover
+			opacity: 0
+			pointer-events: none
+
+		.banner-stage__video--fading
+			transition: opacity var(--banner-fade-duration, 1200ms) var(--m3e-easing-standard)
+
+		.banner-stage__video--shown
+			opacity: 1
+
+		// happycola：右下角署名，放在底部波浪上面（波浪顶上还有一层半透明的浪花，再往上让一点）
+		.banner-stage__credit
+			position: absolute
+			z-index: 2
+			right: var(--m3e-space-6)
+			bottom: calc(clamp(var(--m3e-space-10), 8vh, calc(var(--m3e-space-10) + var(--m3e-space-8))) + var(--m3e-space-6))
+			max-width: calc(100% - var(--m3e-space-12))
+			font: var(--m3e-type-label-small)
+			letter-spacing: 0.02em
+			color: white
+			text-decoration: none
+			text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6)
+			opacity: 0.6
+			transition: opacity var(--m3e-duration-short, 200ms) var(--m3e-easing-standard)
+
+			&:hover,
+			&:focus-visible
+				opacity: 1
+				text-decoration: underline
 
 		.banner-stage__scrim
 			z-index: 1
@@ -1466,7 +1963,7 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 	:global(body[data-banner-home-only="true"]:not([data-current-page="home"])) .banner-stage
 		display: none
 
-	// happycola：首页文字避开人物的脸（banner.homeText.side: left）：电脑端放左半边，手机端放到横幅下方
+	// happycola：首页文字避开人物的脸（banner.homeText.side: left）：电脑端放左半边，手机端放在下巴下面、靠近横幅中间
 	@media (min-width: 1024px)
 		.banner-stage[data-home-copy-side="left"] .banner-stage__copy--home
 			right: 50%
@@ -1476,10 +1973,13 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 			font-size: clamp(2.75rem, 4vw, 5rem)
 			white-space: nowrap
 
+	// 手机竖图里人物下巴在图片高度约 42% 处。图片从顶部对齐铺满，显示高度是「横幅高」和「1.5 倍宽」里大的那个，
+	// 所以标题顶边取「横幅一半」和「图片 46% 处（宽的 69%）」里更靠下的，但不超出横幅（底下留出标题和波浪的高度）
 	@media (max-width: 1023.98px)
 		.banner-stage[data-home-copy-side="left"] .banner-stage__copy--home
-			justify-content: flex-end
-			padding-bottom: var(--m3e-space-24, 6rem)
+			justify-content: flex-start
+			padding-top: unquote("min(max(calc(var(--banner-stage-height) * 0.5), 69vw), calc(var(--banner-stage-height) - 11rem))")
+			padding-bottom: 0
 
 	@media (max-width: 1023.98px)
 		:global(body:not([data-current-page="home"])) .banner-stage
