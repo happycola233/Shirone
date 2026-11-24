@@ -35,6 +35,17 @@ interface ResponsiveBannerImage {
 	height?: number;
 }
 
+// happycola：按时间切换横幅（banner.timeOfDay）。开启后首屏图片交给脚本按访客当地时间挑选
+const timeOfDayConfig = siteConfig.banner.timeOfDay;
+const timeOfDay =
+	timeOfDayConfig?.enable && timeOfDayConfig.startHours.length > 0
+		? {
+				startHours: timeOfDayConfig.startHours,
+				blendMinutes: Math.max(timeOfDayConfig.blendMinutes ?? 30, 0),
+			}
+		: null;
+const homeOnly = siteConfig.banner.homeOnly === true;
+
 const optimizeBannerImage = async (
 	src: string,
 	viewport: "desktop" | "mobile",
@@ -48,8 +59,11 @@ const optimizeBannerImage = async (
 		};
 	}
 
+	// happycola：加 2560 / 3840（手机加 1440），2K、4K 屏和高缩放比例下也清晰；浏览器按屏幕自己挑
 	const requestedWidths =
-		viewport === "desktop" ? [1280, 1600, 1920] : [640, 828, 1080];
+		viewport === "desktop"
+			? [1280, 1600, 1920, 2560, 3840]
+			: [640, 828, 1080, 1440];
 	const widths = [
 		...new Set([
 			...requestedWidths.filter((width) => width <= resolved.width),
@@ -63,8 +77,11 @@ const optimizeBannerImage = async (
 				image: await getImage({ src: resolved, width, format, quality }),
 			})),
 		);
+	// happycola：按时间切换时脚本只用 WebP 的 srcset（这类图 AVIF 并不更小），不再生成用不上的 AVIF
 	const [avif, webp] = await Promise.all([
-		createCandidates("avif", 55),
+		timeOfDay
+			? Promise.resolve<Awaited<ReturnType<typeof createCandidates>>>([])
+			: createCandidates("avif", 55),
 		createCandidates("webp", 68),
 	]);
 	const fallback = webp.at(-1)?.image.src ?? resolved.src;
@@ -170,6 +187,14 @@ const initialDesktopImage = desktopLightResponsive[0];
 const initialMobileImage = mobileLightResponsive[0];
 const initialImage = initialDesktopImage ?? initialMobileImage;
 const initialMobileBanner = page === "home";
+// happycola：按时间切换时，脚本按 srcset 让浏览器自己挑分辨率
+const desktopSrcsets = desktopLightResponsive.map(
+	({ webpSrcset }) => webpSrcset,
+);
+const mobileSrcsets = mobileLightResponsive.map(({ webpSrcset }) => webpSrcset);
+// happycola：图片宽高比，脚本按屏幕尺寸挑分辨率时用
+const aspectOf = (image?: ResponsiveBannerImage) =>
+	image?.width && image.height ? image.width / image.height : undefined;
 ---
 
 <section
@@ -193,8 +218,28 @@ const initialMobileBanner = page === "home";
 	data-subtitle-typewriter-speed={String(Math.max(typewriter.speed, 1))}
 	data-subtitle-typewriter-delete-speed={String(Math.max(typewriter.deleteSpeed ?? 50, 1))}
 	data-subtitle-typewriter-pause-time={String(Math.max(typewriter.pauseTime ?? 2000, 0))}
+	data-home-only={String(homeOnly)}
+	data-home-copy-side={siteConfig.banner.homeText.side ?? "center"}
+	data-time-of-day={timeOfDay ? JSON.stringify(timeOfDay) : undefined}
+	data-desktop-srcsets={timeOfDay ? JSON.stringify(desktopSrcsets) : undefined}
+	data-mobile-srcsets={timeOfDay ? JSON.stringify(mobileSrcsets) : undefined}
+	data-desktop-aspect={timeOfDay ? aspectOf(initialDesktopImage) : undefined}
+	data-mobile-aspect={timeOfDay ? aspectOf(initialMobileImage) : undefined}
 >
 	<div class="banner-stage__media" aria-hidden="true">
+		{/* happycola：按时间切换时不输出 <source>，免得浏览器先下载一张用不上的图；由脚本挑好图、加载完再淡入 */}
+		{timeOfDay ? (
+			<img
+				class="banner-stage__image banner-stage__image--front"
+				width={initialImage?.width}
+				height={initialImage?.height}
+				fetchpriority="high"
+				loading="eager"
+				decoding="async"
+				alt=""
+				style={`object-position: ${siteConfig.banner.position ?? "center"};`}
+			/>
+		) : (
 		<picture>
 			{initialDesktopImage?.avifSrcset && (
 				<source media="(min-width: 1024px)" type="image/avif" srcset={initialDesktopImage.avifSrcset} sizes="100vw" />
@@ -226,6 +271,7 @@ const initialMobileBanner = page === "home";
 				style={`object-position: ${siteConfig.banner.position ?? "center"};`}
 			/>
 		</picture>
+		)}
 		<img class="banner-stage__image banner-stage__image--back" alt="" />
 	</div>
 	{siteConfig.banner.dim.enable && (
@@ -266,6 +312,7 @@ const initialMobileBanner = page === "home";
 
 <script>
 	import { resolveBannerState, type BannerViewport } from "@utils/banner-state";
+	import { resolveTimeOfDayBlend } from "@utils/banner-time-of-day";
 	import {
 		playBannerMotion,
 		type BannerAnimationHandle,
@@ -380,6 +427,242 @@ const initialMobileBanner = page === "home";
 		layerMotions: [null, null],
 		carouselMediaPrepared: false,
 	};
+
+	// happycola：按访客当地时间切换横幅（banner.timeOfDay）。
+	// 两层图片：底层是当前时段；换图时新图先放到上层淡入盖住，再悄悄换掉底层（可选的交界渐变也用上层）。
+	// 防闪要点（内容仓 MIGRATION.md 的 T38）：
+	// - 不用 srcset：改窗口大小时浏览器换档会先清掉旧图，白一下。改成按屏幕尺寸一次性选好分辨率。
+	// - 撤掉上层前先等新底图「解码」完，不只是下载完，否则大图解码的那几帧是空白。
+	// - 换底层前读实际的不透明度，确认上层真的已经完全盖住。
+	// - 只在该显示的图变了时才切换，其他事件（切回窗口、页面重新可见等）不打断正在进行的淡入。
+	interface TimeOfDayOptions {
+		startHours: number[];
+		blendMinutes: number;
+	}
+
+	interface TimeOfDayCandidate {
+		url: string;
+		width: number;
+	}
+
+	function parseTimeOfDay(value: string | undefined): TimeOfDayOptions | null {
+		if (!value) return null;
+		try {
+			const parsed = JSON.parse(value);
+			const startHours = Array.isArray(parsed?.startHours)
+				? parsed.startHours.filter((hour: unknown): hour is number => typeof hour === "number")
+				: [];
+			if (!startHours.length) return null;
+			const blendMinutes = typeof parsed.blendMinutes === "number" ? parsed.blendMinutes : 30;
+			return { startHours, blendMinutes };
+		} catch {
+			return null;
+		}
+	}
+
+	function parseStringList(value: string | undefined): string[] {
+		if (!value) return [];
+		try {
+			const parsed = JSON.parse(value);
+			return Array.isArray(parsed)
+				? parsed.map((item) => (typeof item === "string" ? item : ""))
+				: [];
+		} catch {
+			return [];
+		}
+	}
+
+	function parseSrcset(value: string): TimeOfDayCandidate[] {
+		return value
+			.split(",")
+			.map((part) => {
+				const [url = "", descriptor = ""] = part.trim().split(/\s+/);
+				return { url, width: Number.parseInt(descriptor, 10) };
+			})
+			.filter((candidate) => candidate.url && Number.isFinite(candidate.width))
+			.sort((a, b) => a.width - b.width);
+	}
+
+	const timeOfDay = parseTimeOfDay(stage?.dataset.timeOfDay);
+	const timeOfDayCandidates: Record<BannerViewport, TimeOfDayCandidate[][]> = {
+		desktop: parseStringList(stage?.dataset.desktopSrcsets).map(parseSrcset),
+		mobile: parseStringList(stage?.dataset.mobileSrcsets).map(parseSrcset),
+	};
+	const timeOfDayAspect: Record<BannerViewport, number> = {
+		desktop: Number.parseFloat(stage?.dataset.desktopAspect || "") || 16 / 9,
+		mobile: Number.parseFloat(stage?.dataset.mobileAspect || "") || 2 / 3,
+	};
+	let timeOfDayTimer: number | null = null;
+	let timeOfDayGeneration = 0;
+	// 上一次切换的目标（哪张图、上层比例）；只有它变了才重新切换
+	let lastTimeOfDayTarget = "";
+
+	function minutesOfDayNow(): number {
+		const now = new Date();
+		return now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+	}
+
+	function timeOfDayKey(group: BannerViewport, index: number): string {
+		return `${group}:${index}`;
+	}
+
+	// 横幅最大就是一整屏：按屏幕（不是窗口）尺寸和缩放比例选够用的最小一档，之后改窗口大小不再换图
+	function pickTimeOfDayUrl(group: BannerViewport, index: number): string {
+		const candidates = timeOfDayCandidates[group][index] ?? [];
+		const fallback = runtime.images[group].light[index] ?? "";
+		if (!candidates.length) return fallback;
+		const width = Math.max(window.screen.width, window.innerWidth);
+		const height = Math.max(window.screen.height, window.innerHeight);
+		const needed =
+			Math.max(width, height * timeOfDayAspect[group]) * (window.devicePixelRatio || 1);
+		const picked =
+			candidates.find((candidate) => candidate.width >= needed * 0.95) ??
+			candidates[candidates.length - 1];
+		return picked.url;
+	}
+
+	async function setTimeOfDayLayer(
+		layer: HTMLImageElement,
+		group: BannerViewport,
+		index: number,
+	): Promise<void> {
+		const key = timeOfDayKey(group, index);
+		if (layer.dataset.timeOfDayKey !== key) {
+			layer.dataset.timeOfDayKey = key;
+			layer.style.objectPosition = stage?.dataset.position || "center";
+			layer.removeAttribute("srcset");
+			layer.removeAttribute("sizes");
+			layer.src = pickTimeOfDayUrl(group, index);
+		}
+		if (!(layer.complete && layer.naturalWidth > 0)) {
+			await new Promise<void>((resolve) => {
+				layer.addEventListener("load", () => resolve(), { once: true });
+				layer.addEventListener("error", () => resolve(), { once: true });
+			});
+		}
+		await layer.decode().catch(() => undefined);
+	}
+
+	// 等图层实际的不透明度到达目标（CSS 过渡真的走完）；最多等过渡时长再加 0.5 秒
+	function waitForLayerOpacity(layer: HTMLImageElement, target: number): Promise<void> {
+		const limit =
+			performance.now() + (prefersReducedMotion() ? 0 : getFadeDuration()) + 500;
+		return new Promise((resolve) => {
+			const check = () => {
+				const current = Number.parseFloat(getComputedStyle(layer).opacity);
+				if (Math.abs(current - target) < 0.01 || performance.now() > limit) resolve();
+				else window.requestAnimationFrame(check);
+			};
+			window.requestAnimationFrame(check);
+		});
+	}
+
+	function hideOverlayInstantly(overlay: HTMLImageElement) {
+		overlay.classList.remove("banner-stage__image--fading");
+		overlay.style.opacity = "0";
+		void overlay.offsetWidth;
+		overlay.classList.add("banner-stage__image--fading");
+	}
+
+	function currentTimeOfDayTarget(group: BannerViewport) {
+		if (!timeOfDay) return null;
+		const blend = resolveTimeOfDayBlend(
+			timeOfDay.startHours,
+			timeOfDay.blendMinutes,
+			minutesOfDayNow(),
+		);
+		return {
+			blend,
+			key: `${group}:${blend.from}:${blend.to}:${blend.mix.toFixed(2)}`,
+		};
+	}
+
+	function showOverlayInstantly(overlay: HTMLImageElement) {
+		overlay.classList.remove("banner-stage__image--fading");
+		overlay.style.opacity = "1";
+		void overlay.offsetWidth;
+		overlay.classList.add("banner-stage__image--fading");
+	}
+
+	// instant：在电脑和手机尺寸之间切换时为 true。两套图裁切不同，叠着淡入会出现重影，所以新图解码好后直接换
+	async function applyTimeOfDay(group: BannerViewport, instant = false) {
+		const [base, overlay] = layers;
+		const target = currentTimeOfDayTarget(group);
+		if (!target || !base || !overlay) return;
+		lastTimeOfDayTarget = target.key;
+		timeOfDayGeneration += 1;
+		const generation = timeOfDayGeneration;
+		const stale = () => generation !== timeOfDayGeneration;
+		const { blend } = target;
+		const baseKey = timeOfDayKey(group, blend.from);
+		overlay.classList.add("banner-stage__image--fading");
+
+		if (!base.classList.contains("banner-stage__image--active")) {
+			// 第一次显示：底图解码好后淡入
+			await setTimeOfDayLayer(base, group, blend.from);
+			if (stale()) return;
+			base.classList.add("banner-stage__image--fading", "banner-stage__image--active");
+		} else if (base.dataset.timeOfDayKey !== baseKey) {
+			// 底图要换（到点了、访客改了系统时间、电脑睡眠后醒来、在电脑和手机尺寸之间切换）：
+			// 新图先放到上层盖住（时段切换淡入，尺寸切换直接盖），再悄悄换掉底层
+			if (instant) {
+				hideOverlayInstantly(overlay);
+				await setTimeOfDayLayer(overlay, group, blend.from);
+				if (stale()) return;
+				showOverlayInstantly(overlay);
+			} else {
+				if (overlay.dataset.timeOfDayKey !== baseKey) {
+					overlay.style.opacity = "0";
+					await waitForLayerOpacity(overlay, 0);
+					if (stale()) return;
+				}
+				await setTimeOfDayLayer(overlay, group, blend.from);
+				if (stale()) return;
+				overlay.style.opacity = "1";
+				await waitForLayerOpacity(overlay, 1);
+				if (stale()) return;
+			}
+			await setTimeOfDayLayer(base, group, blend.from);
+			if (stale()) return;
+			hideOverlayInstantly(overlay);
+		}
+
+		// 底图到位后，按渐变比例调上层（blendMinutes 为 0 时上层一直是 0）
+		if (blend.mix > 0) {
+			const overlayKey = timeOfDayKey(group, blend.to);
+			if (overlay.dataset.timeOfDayKey !== overlayKey) {
+				overlay.style.opacity = "0";
+				await waitForLayerOpacity(overlay, 0);
+				if (stale()) return;
+			}
+			await setTimeOfDayLayer(overlay, group, blend.to);
+			if (stale()) return;
+			overlay.style.opacity = String(blend.mix);
+		} else {
+			overlay.style.opacity = "0";
+		}
+	}
+
+	// 每秒的检查、切回窗口、syncBanner 都走这里：该显示的图没变就什么都不做
+	function refreshTimeOfDay(
+		group: BannerViewport | null = runtime.activeGroup,
+		instant = false,
+	) {
+		if (!timeOfDay || stage?.hidden !== false || !group) return;
+		if (currentTimeOfDayTarget(group)?.key === lastTimeOfDayTarget) return;
+		void applyTimeOfDay(group, instant);
+	}
+
+	function stopTimeOfDayClock() {
+		if (timeOfDayTimer !== null) window.clearInterval(timeOfDayTimer);
+		timeOfDayTimer = null;
+	}
+
+	// 每秒看一次时间（只读一下时钟，结果变了才动页面）；切回窗口时另外立刻看一次，见下面的 focus 监听
+	function startTimeOfDayClock() {
+		if (timeOfDayTimer !== null) return;
+		timeOfDayTimer = window.setInterval(() => refreshTimeOfDay(), 1000);
+	}
 
 	function currentPage(): SidebarPage | undefined {
 		return document.getElementById("swup-container")?.dataset.currentPage as
@@ -922,6 +1205,7 @@ const initialMobileBanner = page === "home";
 			imageCount: images.length,
 			carouselEnabled: stage.dataset.carouselEnabled === "true",
 			reducedMotion: prefersReducedMotion(),
+			homeOnly: stage.dataset.homeOnly === "true",
 		});
 
 		document.body.dataset.currentPage = page || "";
@@ -945,6 +1229,20 @@ const initialMobileBanner = page === "home";
 		if (!state.visible || !state.assetGroup) {
 			stopRotation();
 			stopLayerMotions();
+			stopTimeOfDayClock();
+			return;
+		}
+
+		// happycola：按时间切换时由 applyTimeOfDay 接管换图，不走轮播
+		if (timeOfDay) {
+			stopRotation();
+			stopLayerMotions();
+			const viewportChanged =
+				runtime.activeGroup !== null && runtime.activeGroup !== state.assetGroup;
+			runtime.activeGroup = state.assetGroup;
+			refreshTimeOfDay(state.assetGroup, viewportChanged);
+			if (document.hidden) stopTimeOfDayClock();
+			else startTimeOfDayClock();
 			return;
 		}
 
@@ -979,6 +1277,8 @@ const initialMobileBanner = page === "home";
 			window.__shironeBannerBound = true;
 			window.addEventListener(WALLPAPER_MODE_CHANGE_EVENT, () => syncBanner());
 			window.addEventListener(THEME_CHANGE_EVENT, () => syncBanner());
+			// happycola：访客去系统设置里改了时间再切回来，立刻按新时间换图
+			window.addEventListener("focus", () => refreshTimeOfDay());
 			window.addEventListener("resize", () => {
 				if (currentViewport() === "desktop" && stage?.hidden === false) {
 					scheduleContextTitleFit();
@@ -1161,6 +1461,25 @@ const initialMobileBanner = page === "home";
 
 	:global(html[data-wallpaper-mode="none"]) .banner-stage
 		display: none
+
+	// happycola：电脑端也只在首页显示（banner.homeOnly）；脚本接管前先靠这条藏起来
+	:global(body[data-banner-home-only="true"]:not([data-current-page="home"])) .banner-stage
+		display: none
+
+	// happycola：首页文字避开人物的脸（banner.homeText.side: left）：电脑端放左半边，手机端放到横幅下方
+	@media (min-width: 1024px)
+		.banner-stage[data-home-copy-side="left"] .banner-stage__copy--home
+			right: 50%
+
+		// 左半边在窄窗口下放不下 5rem 的标题（表情会掉到第二行），字号跟着窗口宽度缩放，最大不变
+		.banner-stage[data-home-copy-side="left"] .banner-stage__copy--home h1
+			font-size: clamp(2.75rem, 4vw, 5rem)
+			white-space: nowrap
+
+	@media (max-width: 1023.98px)
+		.banner-stage[data-home-copy-side="left"] .banner-stage__copy--home
+			justify-content: flex-end
+			padding-bottom: var(--m3e-space-24, 6rem)
 
 	@media (max-width: 1023.98px)
 		:global(body:not([data-current-page="home"])) .banner-stage

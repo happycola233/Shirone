@@ -94,6 +94,8 @@ const umamiOptions = resolveUmamiOptions(umamiConfig);
 
 const hasDesktopBanner = hasBannerImages(siteConfig.banner.src.desktop);
 const hasMobileBanner = hasBannerImages(siteConfig.banner.src.mobile);
+// happycola：电脑端也只在首页显示横幅（banner.homeOnly）
+const bannerHomeOnly = siteConfig.banner.homeOnly === true;
 
 let pageTitle: string;
 if (title) {
@@ -231,6 +233,7 @@ const defaultSchemeStyle = createDefaultSchemeStyle();
 		data-banner-top-app-bar="false"
 		data-banner-has-desktop={String(hasDesktopBanner)}
 		data-banner-has-mobile={String(hasMobileBanner)}
+		data-banner-home-only={String(bannerHomeOnly)}
 	>
 		<ConfigCarrier></ConfigCarrier>
 		{umamiOptions && <UmamiRuntime />}
@@ -252,7 +255,8 @@ const defaultSchemeStyle = createDefaultSchemeStyle();
 </style>
 
 <style is:global define:vars={{
-	'banner-height-home': `${BANNER_HEIGHT_HOME}vh`,
+	// happycola：电脑端首页横幅高度可配置（banner.homeHeight），不配就是主题默认
+	'banner-height-home': `${siteConfig.banner.homeHeight ?? BANNER_HEIGHT_HOME}vh`,
 	'banner-height': `${BANNER_HEIGHT}vh`,
 	'banner-panel-overlap': `${MAIN_PANEL_OVERLAPS_BANNER_HEIGHT}rem`,
 }}>
@@ -271,8 +275,9 @@ const defaultSchemeStyle = createDefaultSchemeStyle();
 		.navbar-hidden { opacity: 0; transform: translateY(-4rem); }
 	}
 	@media (min-width: 1024px) {
-		html[data-wallpaper-mode="banner"] body[data-banner-has-desktop="true"] #main-layout { top: var(--banner-content-top); }
-		html[data-wallpaper-mode="banner"] body[data-banner-has-desktop="true"] #top-row { height: calc(var(--banner-stage-height) - 4.5rem); }
+		/* happycola：开了 banner.homeOnly 时，只有首页给横幅留位置 */
+		html[data-wallpaper-mode="banner"] body[data-banner-has-desktop="true"]:is(:not([data-banner-home-only="true"]), [data-current-page="home"]) #main-layout { top: var(--banner-content-top); }
+		html[data-wallpaper-mode="banner"] body[data-banner-has-desktop="true"]:is(:not([data-banner-home-only="true"]), [data-current-page="home"]) #top-row { height: calc(var(--banner-stage-height) - 4.5rem); }
 	}
 	@media (max-width: 1023.98px) {
 		:root { --banner-stage-height: max(70vh, 28rem); }

@@ -13,6 +13,8 @@ export interface BannerStateInput {
 	imageCount: number;
 	carouselEnabled: boolean;
 	reducedMotion: boolean;
+	/** happycola：电脑端也只在首页显示（banner.homeOnly） */
+	homeOnly?: boolean;
 }
 
 export interface BannerState {
@@ -29,7 +31,7 @@ export function resolveBannerState(input: BannerStateInput): BannerState {
 	const visible =
 		input.mode === "banner" &&
 		input.imageCount > 0 &&
-		(input.viewport === "desktop" || isHome);
+		(isHome || (input.viewport === "desktop" && !input.homeOnly));
 
 	const copyMode: BannerCopyMode = !visible
 		? null

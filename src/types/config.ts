@@ -35,6 +35,21 @@ export type BannerConfig = {
 		mobile: BannerSourceValue;
 	};
 	position?: "top" | "center" | "bottom";
+	/** happycola：电脑端也只在首页显示横幅（主题默认电脑端每页都显示，手机端本来就只在首页显示） */
+	homeOnly?: boolean;
+	/** happycola：电脑端首页横幅高度，单位 vh（主题默认 65；100 就是占满一屏） */
+	homeHeight?: number;
+	/**
+	 * happycola：按访客当地时间切换横幅，src 里的图按顺序对应 startHours。
+	 * 开启后不再轮播，首屏图片由脚本按时间挑选（只用数组形式的 src，不区分亮暗）。
+	 */
+	timeOfDay?: {
+		enable: boolean;
+		/** 每张图的开始时间（0–23 点），和 src 数组一一对应 */
+		startHours: number[];
+		/** 交界前后各渐变多少分钟，0 表示到点直接换（默认 30） */
+		blendMinutes?: number;
+	};
 	dim: {
 		enable: boolean;
 		opacity: number;
@@ -44,6 +59,8 @@ export type BannerConfig = {
 		title: string;
 		/** 首页副标题文本，支持单条字符串或多条交替循环的字符串数组 */
 		subtitle: string | string[];
+		/** happycola：文字放在哪：center 正中（默认）/ left 避开右边的人物：电脑端放左半边，手机端放到横幅下方 */
+		side?: "center" | "left";
 		typewriter: {
 			enable: boolean;
 			/** 打字速度（每个字符间隔，毫秒，默认 120） */
