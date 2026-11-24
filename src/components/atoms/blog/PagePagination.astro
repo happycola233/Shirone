@@ -180,12 +180,15 @@ const pageLabel = (p: number) => labels.page.replace("{page}", String(p));
 
 		const commit = () => {
 			const n = Number.parseInt(input.value, 10);
-			if (!Number.isInteger(n) || n < 1 || n > total) {
+			// happycola：输入当前页时不再整页刷新
+			if (!Number.isInteger(n) || n < 1 || n > total || String(n) === current) {
 				restore();
 				return;
 			}
-			window.location.href =
-				n === 1 ? first : template.replace("{page}", String(n));
+			const target = n === 1 ? first : template.replace("{page}", String(n));
+			// happycola：有 Swup 就走站内跳转（带上触发元素），和点页码一样滚到文章列表顶部
+			if (window.swup) window.swup.navigate(target, {}, { el: input });
+			else window.location.href = target;
 		};
 
 		input.addEventListener("keydown", (event) => {
@@ -194,4 +197,50 @@ const pageLabel = (p: number) => labels.page.replace("{page}", String(p));
 		});
 		input.addEventListener("blur", restore);
 	});
+
+	// happycola：翻页后滚到文章列表顶部（顶栏下方留 16px），而不是滚回整页最顶上。
+	// 主题默认每次 Swup 换页都回到页面顶部，首页有横幅时，第二页打开后第一屏只剩横幅。
+	// 做法：在 content:scroll 之前把这次换页的 scroll.reset 关掉（Swup 自带的回顶和
+	// 滚动插件都看这个开关），再自己滚过去；有滚动插件（正式构建）时用它的平滑滚动。
+	// 浏览器前进 / 后退不经过分页器，仍按原来的方式恢复位置。
+	// 构建后这段脚本是内联的，Swup 每次换页都会重新执行一遍，所以只绑定一次。
+	const paginationScrollState = window as Window & {
+		__happycolaPaginationScrollBound?: boolean;
+	};
+	// 只写用到的字段（主题仓根目录解析不到 swup 的类型，window.swup 是 any）
+	type PaginationVisit = {
+		history: { popstate: boolean };
+		trigger: { el?: Element };
+		scroll: { reset: boolean; animate?: boolean };
+	};
+	const paginationVisits = new WeakSet<PaginationVisit>();
+	const bindPaginationScroll = () => {
+		const swup = window.swup;
+		if (!swup?.hooks || paginationScrollState.__happycolaPaginationScrollBound) return;
+		paginationScrollState.__happycolaPaginationScrollBound = true;
+		// 在 visit:start 就记下来：这时触发元素还在页面里，换完内容后它就被移走了
+		swup.hooks.on("visit:start", (visit: PaginationVisit) => {
+			if (visit.history.popstate) return;
+			if (visit.trigger.el?.closest(".m3-blog-pagination")) {
+				paginationVisits.add(visit);
+			}
+		});
+		swup.hooks.before("content:scroll", (visit: PaginationVisit) => {
+			if (!paginationVisits.has(visit)) return;
+			const column = document.getElementById("main-content-column");
+			if (!column) return;
+			const navbarHeight = document.getElementById("navbar")?.offsetHeight ?? 0;
+			const top = Math.max(
+				0,
+				column.getBoundingClientRect().top + window.scrollY - navbarHeight - 16,
+			);
+			visit.scroll.reset = false;
+			requestAnimationFrame(() => {
+				if (swup.scrollTo) swup.scrollTo(top, visit.scroll.animate ?? true);
+				else window.scrollTo(0, top);
+			});
+		});
+	};
+	if (window.swup?.hooks) bindPaginationScroll();
+	else document.addEventListener("swup:enable", bindPaginationScroll, { once: true });
 </script>
