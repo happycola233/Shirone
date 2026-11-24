@@ -270,6 +270,9 @@ const defaultSchemeStyle = createDefaultSchemeStyle();
 			top: 5.5rem;
 			transition: top var(--m3e-duration-long) var(--m3e-easing-standard);
 		}
+		/* happycola：Swup 换页期间不做 top 过渡（从别的页面点链接回首页除外，脚本见下方
+		   happycola-page-swap），否则首页 → 文章页时文章区一边滑、页面一边滚，先往下再往上抽一下 */
+		html.happycola-page-swap #main-layout { transition: none; }
 		body[data-banner-layout="banner"] #main-layout { top: var(--banner-content-top); }
 		body[data-banner-layout="banner"] #top-row { height: calc(var(--banner-stage-height) - 4.5rem); }
 		.navbar-hidden { opacity: 0; transform: translateY(-4rem); }
@@ -359,6 +362,57 @@ const setup = () => {
 };
 if (window.swup?.hooks) setup();
 else document.addEventListener('swup:enable', setup, { once: true });
+
+// happycola：换页时页面不再「先往下再往上」抽一下（内容仓 MIGRATION.md T48）：
+// 1. 首页有横幅时文章区在下面（约一屏高），别的页面在顶栏下方。#main-layout 的 top 带 400ms
+//    过渡，本来是给切换壁纸模式用的，换页时它也会动：从首页进文章，文章区往上滑的同时页面在
+//    往回滚，两者速度不同，就抽一下；按后退回首页，列表会从上面滑下来。换页期间给 <html> 加
+//    happycola-page-swap 类把过渡关掉，换完再等两帧撤掉（横幅脚本在换内容后的下一帧才改
+//    data-current-page），切换壁纸模式时的过渡不受影响。
+// 2. 主题开着 Swup 的平滑滚动，换到新页面时先把新内容放在旧的滚动位置，再慢慢滚回顶部，
+//    看到的是新文章从中间一路滑到开头。改成换内容时直接回到顶部（这时新内容还没淡入，看不到
+//    跳动）。点分页器翻页仍平滑滚到文章列表顶部（见 PagePagination.astro），浏览器前进 / 后退、
+//    同一页里的锚点跳转不受影响。
+// 3. 从别的页面点链接回首页时保留第 1 条的过渡：页面已经在顶部，文章区从顶栏下方滑到横幅
+//    下面，露出横幅，不会和滚动打架。浏览器后退回首页不保留（浏览器会先恢复到原来的滚动位置，
+//    再滑就是一整屏的大甩动）。
+type PageSwapVisit = {
+	history: { popstate: boolean };
+	trigger: { el?: Element };
+	scroll: { animate?: boolean };
+};
+const bindPageSwap = () => {
+	const state = window as Window & { __happycolaPageSwapBound?: boolean };
+	if (!window.swup?.hooks || state.__happycolaPageSwapBound) return;
+	state.__happycolaPageSwapBound = true;
+	const root = document.documentElement;
+	let token = 0;
+	window.swup.hooks.on('visit:start', (visit: PageSwapVisit) => {
+		token++;
+		root.classList.add('happycola-page-swap');
+		if (!visit.history.popstate && !visit.trigger.el?.closest('.m3-blog-pagination')) {
+			visit.scroll.animate = false;
+		}
+	});
+	// 这时新内容已换上（#swup-container 带新页面的 data-current-page），body 上的还是旧页面
+	window.swup.hooks.on('content:replace', (visit: PageSwapVisit) => {
+		if (visit.history.popstate) return;
+		const next = document.getElementById('swup-container')?.dataset.currentPage;
+		if (next === 'home' && document.body.dataset.currentPage !== 'home') {
+			root.classList.remove('happycola-page-swap');
+		}
+	});
+	const end = () => {
+		const current = token;
+		requestAnimationFrame(() => requestAnimationFrame(() => {
+			if (current === token) root.classList.remove('happycola-page-swap');
+		}));
+	};
+	window.swup.hooks.on('visit:end', end);
+	window.swup.hooks.on('visit:abort', end);
+};
+if (window.swup?.hooks) bindPageSwap();
+else document.addEventListener('swup:enable', bindPageSwap, { once: true });
 
 const backToTopBtn = document.getElementById('back-to-top-btn');
 function scrollFunction() {
