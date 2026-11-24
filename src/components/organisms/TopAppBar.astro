@@ -51,7 +51,8 @@ function isActive(link: (typeof links)[number]): boolean {
 			<span class="h-5 w-1 rounded-full bg-[var(--primary)] transition-all group-hover:h-7"></span>
 			<span class="text-lg font-bold group-hover:text-[var(--primary)]">{siteConfig.title}</span>
 		</a>
-		<nav class:list={["top-app-bar__nav hidden h-full items-center gap-1 lg:flex", siteConfig.topAppBar.contentAlign === "center" ? "lg:absolute lg:left-1/2 lg:-translate-x-1/2" : "ml-4"]} aria-label={i18n(I18nKey.mainNavigation)}>
+		{/* happycola：居中时加 lg:w-max。绝对定位 + left:50% 只给导航留半个顶栏宽，窗口窄于约 1150px 时每个按钮的字被挤成两行；按内容宽度排开，1024 宽也放得下 */}
+		<nav class:list={["top-app-bar__nav hidden h-full items-center gap-1 lg:flex", siteConfig.topAppBar.contentAlign === "center" ? "lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:w-max" : "ml-4"]} aria-label={i18n(I18nKey.mainNavigation)}>
 			{links.map((link) => {
 				const href = link.external ? link.url : hrefFor(link.url);
 				const active = isActive(link);
