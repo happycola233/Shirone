@@ -712,7 +712,8 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 	//   四段视频逐帧对齐，所以过渡时只有光线在变，人物不会重影。
 	// - 在电脑和手机尺寸之间切换：同样对齐时刻，但直接换（两套裁切不同，淡入会重影）。
 	// - 不在首页、页面切到后台、横幅滚出屏幕时暂停。
-	// - 访客开了「减少动态效果」或省流量、浏览器不让自动播放或放不流畅时，只显示静态图。
+	// - 访客开了「减少动态效果」或省流量、浏览器不让自动播放或放不流畅时，只显示静态图
+	//   （放之前问浏览器，放起来以后自己再看一眼卡不卡）。
 	interface BannerVideoVariant {
 		width: number;
 		height: number;
@@ -768,7 +769,7 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 	let videoTargetKey = "";
 	let videoSwitching = false;
 	let videoInView = true;
-	// 浏览器不让自动播放（如 iPhone 低电量模式）或视频加载出错：这次访问只用静态图
+	// 浏览器不让自动播放（如 iPhone 低电量模式）、视频加载出错或放起来太卡：这次访问只用静态图
 	let videoBlocked = false;
 	const videoVariantChoice = new Map<BannerViewport, Promise<BannerVideoVariant | null>>();
 
@@ -807,13 +808,13 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 	async function probeVideoVariant(
 		variant: BannerVideoVariant,
 		fps: number,
-	): Promise<{ smooth: boolean; powerEfficient: boolean }> {
+	): Promise<{ supported: boolean; smooth: boolean; powerEfficient: boolean }> {
 		const contentType = videoContentType(variant, fps);
 		if (!videoLayers[0]?.canPlayType(contentType)) {
-			return { smooth: false, powerEfficient: false };
+			return { supported: false, smooth: false, powerEfficient: false };
 		}
 		if (!navigator.mediaCapabilities?.decodingInfo) {
-			return { smooth: true, powerEfficient: true };
+			return { supported: true, smooth: true, powerEfficient: true };
 		}
 		try {
 			const info = await navigator.mediaCapabilities.decodingInfo({
@@ -829,18 +830,22 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 			// Safari 对 HEVC 一律回答 smooth=false，其实是硬件解码、播放很顺（2026-11-25 iPad 实测），
 			// 所以「流畅」或「硬件解码」有一个就算能放
 			return {
+				supported: info.supported,
 				smooth: info.supported && (info.smooth || info.powerEfficient),
 				powerEfficient: info.supported && info.powerEfficient,
 			};
 		} catch {
-			return { smooth: true, powerEfficient: true };
+			return { supported: true, smooth: true, powerEfficient: true };
 		}
 	}
 
 	// 和静态图一样按屏幕（不是窗口）尺寸选够用的一档；AV1 优先（同样大小更清楚），
 	// 其次 HEVC（苹果设备大多不能放 AV1，但都能硬件解 HEVC），最后 H.264。
 	// 优先选省电的（显卡硬件解码），都不省电时退而选能流畅播放的；都不行就不放视频。
-	// 电脑上 1080p 以内的软件解码很轻，不为了硬件解码换成更大的文件；手机上省电优先
+	// happycola：电脑上没有硬件解码时最多用 1080p：软件解码 1440p / 4K 很吃力（4 核虚拟机上掉一半帧），
+	// 1080p 很轻（同一台只掉 1%）。浏览器回答「流畅吗」靠的是它自己记的以往掉帧记录（Chrome 全浏览器共用，
+	// 无痕窗口也沿用），偶然卡一次就一直回答「不流畅」，我们又不放，它就永远没有新记录（内容仓 MIGRATION.md T47）。
+	// 所以电脑上 1080p 以内哪怕回答「不流畅」也先放着试，放起来以后自己看卡不卡（checkVideoSmoothness）
 	async function chooseVideoVariant(
 		group: BannerViewport,
 	): Promise<BannerVideoVariant | null> {
@@ -849,7 +854,10 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 		const height = Math.max(window.screen.height, window.innerHeight);
 		const cheapToDecode = (variant: BannerVideoVariant) =>
 			group === "desktop" && variant.width * variant.height <= 1920 * 1080;
+		// 软件解码、浏览器说流畅的
 		let fallback: BannerVideoVariant | null = null;
+		// 电脑上软件解码、浏览器说不流畅、但够轻的：放着试试
+		let trial: BannerVideoVariant | null = null;
 		for (const codec of ["av1", "hevc", "h264"] as const) {
 			const list = bannerVideo[group]
 				.filter((variant) => variant.codec === codec)
@@ -862,13 +870,24 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 			if (start < 0) start = list.length - 1;
 			for (let i = start; i >= 0; i--) {
 				const result = await probeVideoVariant(list[i], bannerVideo.fps);
-				if (!result.smooth) continue;
-				if (result.powerEfficient || cheapToDecode(list[i])) return list[i];
-				fallback ??= list[i];
+				if (!result.supported) continue;
+				if (result.smooth && result.powerEfficient) return list[i];
+				if (group === "mobile") {
+					// 手机：省电优先，都不省电时选流畅的
+					if (!result.smooth) continue;
+					fallback ??= list[i];
+					break;
+				}
+				// 电脑：大于 1080p 的只用硬件解码，往下找小一档
+				if (!cheapToDecode(list[i])) continue;
+				// 屏幕本来就只要这一档：软件解码很轻，不为了硬件解码换别的编码、更大的文件
+				if (result.smooth && i === start) return list[i];
+				if (result.smooth) fallback ??= list[i];
+				else trial ??= list[i];
 				break;
 			}
 		}
-		return fallback;
+		return fallback ?? trial;
 	}
 
 	function pickVideoVariant(group: BannerViewport): Promise<BannerVideoVariant | null> {
@@ -938,6 +957,108 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 		if (front?.classList.contains(VIDEO_SHOWN) && front.paused) {
 			front.play().catch(() => undefined);
 		}
+		startVideoSmoothnessCheck();
+	}
+
+	// happycola：放起来以后自己看一眼卡不卡（浏览器回答的「流畅」只是按以往记录猜的，见 chooseVideoVariant）。
+	// 每一档每次打开页面只看一次：正常播放 1 秒后开始，看 4 秒，掉帧超过六成（每秒不到 12 帧，像幻灯片）
+	// 或者播放进度跟不上（不到七成），就淡出回到静态图，这次访问不再放视频。线不能定太严：虚拟机里 1080p
+	// 铺满 2.5K 窗口，光是放大显示就掉两三成、多的时候四成帧，看着仍然在动（内容仓 MIGRATION.md T47）。
+	// 换时段（两段视频同时解码）、暂停、切后台时不算，回来重新计时；网不好在缓冲时也不算（那是网速问题，不是解码问题）
+	const VIDEO_CHECK_WARMUP = 1000;
+	const VIDEO_CHECK_WINDOW = 4000;
+	const VIDEO_CHECK_MAX_DROPPED = 0.6;
+	const VIDEO_CHECK_MIN_PROGRESS = 0.7;
+	const checkedVideoVariants = new WeakSet<BannerVideoVariant>();
+	let videoFrontVariant: BannerVideoVariant | null = null;
+	let videoCheckTimer: number | null = null;
+	let videoCheck: {
+		video: HTMLVideoElement;
+		since: number;
+		base: { at: number; time: number; total: number; dropped: number } | null;
+	} | null = null;
+
+	function stopVideoSmoothnessCheck() {
+		if (videoCheckTimer !== null) window.clearInterval(videoCheckTimer);
+		videoCheckTimer = null;
+		videoCheck = null;
+	}
+
+	function startVideoSmoothnessCheck() {
+		if (videoCheckTimer !== null) return;
+		if (!videoFrontVariant || checkedVideoVariants.has(videoFrontVariant)) return;
+		videoCheckTimer = window.setInterval(checkVideoSmoothness, 500);
+	}
+
+	function checkVideoSmoothness() {
+		const video = videoLayers[videoFront];
+		const variant = videoFrontVariant;
+		if (
+			!video ||
+			!variant ||
+			checkedVideoVariants.has(variant) ||
+			!video.classList.contains(VIDEO_SHOWN) ||
+			video.paused ||
+			videoSwitching ||
+			document.hidden
+		) {
+			// 暂停、切后台、换时段：先停，playFrontVideo 恢复播放时重新开始
+			stopVideoSmoothnessCheck();
+			return;
+		}
+		const quality = video.getVideoPlaybackQuality?.();
+		if (!quality) {
+			checkedVideoVariants.add(variant);
+			stopVideoSmoothnessCheck();
+			return;
+		}
+		const now = performance.now();
+		if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA || videoCheck?.video !== video) {
+			videoCheck = { video, since: now, base: null };
+			return;
+		}
+		if (!videoCheck.base) {
+			if (now - videoCheck.since < VIDEO_CHECK_WARMUP) return;
+			videoCheck.base = {
+				at: now,
+				time: video.currentTime,
+				total: quality.totalVideoFrames,
+				dropped: quality.droppedVideoFrames,
+			};
+			return;
+		}
+		const elapsed = now - videoCheck.base.at;
+		if (elapsed < VIDEO_CHECK_WINDOW) return;
+		const duration = video.duration || 1;
+		// 视频是循环的，播到头会绕回开头
+		const advanced =
+			((((video.currentTime - videoCheck.base.time) % duration) + duration) % duration) * 1000;
+		const total = quality.totalVideoFrames - videoCheck.base.total;
+		const dropped = quality.droppedVideoFrames - videoCheck.base.dropped;
+		checkedVideoVariants.add(variant);
+		stopVideoSmoothnessCheck();
+		if (
+			advanced < elapsed * VIDEO_CHECK_MIN_PROGRESS ||
+			(total > 0 && dropped / total > VIDEO_CHECK_MAX_DROPPED)
+		) {
+			void giveUpBannerVideo();
+		}
+	}
+
+	// 太卡：淡出回到静态图，这次访问不再放视频（静态图是视频第一帧，淡出时人物动作会有一点点变化）
+	async function giveUpBannerVideo() {
+		videoBlocked = true;
+		videoGeneration += 1;
+		const generation = videoGeneration;
+		videoTargetKey = "";
+		videoSwitching = false;
+		const front = videoLayers[videoFront];
+		if (front?.classList.contains(VIDEO_SHOWN)) {
+			setVideoShown(front, false, true);
+			await waitForLayerOpacity(front, 0);
+		}
+		if (generation !== videoGeneration) return;
+		for (const video of videoLayers) resetVideo(video);
 	}
 
 	function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
@@ -1098,6 +1219,7 @@ const aspectOf = (image?: ResponsiveBannerImage) =>
 		}
 		resetVideo(front);
 		videoFront = backIndex;
+		videoFrontVariant = variant;
 		videoSwitching = false;
 		if (videoShouldPlay()) playFrontVideo();
 		else pauseBannerVideos();
