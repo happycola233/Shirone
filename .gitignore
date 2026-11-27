@@ -88,6 +88,7 @@ artifacts/shirone-ai-*
 /public/assets/banner/
 /public/assets/music/
 /public/assets/projects/
+/public/assets/devices/
 /public/assets/anime/*.webp
 /public/assets/audio/
 /public/img/
